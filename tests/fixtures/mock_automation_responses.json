@@ -1,0 +1,136 @@
+{
+  "scenarios": {
+    "scenario1_refused": {
+      "description": "Connection Refused - 服务未启动",
+      "source": "server1",
+      "target": "server2",
+      "port": 80,
+      "commands": {
+        "telnet_test": {
+          "device": "server1",
+          "command": "timeout 5 bash -c '</dev/tcp/10.0.2.20/80' 2>&1 && echo 'SUCCESS' || echo 'FAILED'",
+          "stdout": "",
+          "stderr": "bash: connect: Connection refused\nbash: /dev/tcp/10.0.2.20/80: Connection refused\nFAILED",
+          "success": false,
+          "exit_code": 1,
+          "execution_time": 0.234,
+          "timestamp": "2026-01-13T10:00:00Z"
+        },
+        "ss_listen": {
+          "device": "server2",
+          "command": "ss -tunlp | grep ':80'",
+          "stdout": "",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 0.089,
+          "timestamp": "2026-01-13T10:00:01Z"
+        },
+        "ping": {
+          "device": "server1",
+          "command": "ping -c 4 -W 5 10.0.2.20",
+          "stdout": "PING 10.0.2.20 (10.0.2.20) 56(84) bytes of data.\n64 bytes from 10.0.2.20: icmp_seq=1 ttl=64 time=0.234 ms\n64 bytes from 10.0.2.20: icmp_seq=2 ttl=64 time=0.189 ms\n64 bytes from 10.0.2.20: icmp_seq=3 ttl=64 time=0.201 ms\n64 bytes from 10.0.2.20: icmp_seq=4 ttl=64 time=0.198 ms\n\n--- 10.0.2.20 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3001ms\nrtt min/avg/max/mdev = 0.189/0.205/0.234/0.018 ms",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 3.125,
+          "timestamp": "2026-01-13T10:00:02Z"
+        },
+        "iptables_list": {
+          "device": "server2",
+          "command": "iptables -L INPUT -n -v",
+          "stdout": "Chain INPUT (policy ACCEPT)\npkts bytes target  prot opt in  out  source      destination\n100  6000  ACCEPT  tcp  --  *   *   0.0.0.0/0   0.0.0.0/0   tcp dpt:22\n 50  3000  ACCEPT  tcp  --  *   *   0.0.0.0/0   0.0.0.0/0   tcp dpt:80",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 0.123,
+          "timestamp": "2026-01-13T10:00:03Z"
+        }
+      },
+      "expected_root_cause": "server2上的服务未启动或未监听80端口",
+      "expected_confidence": 0.95
+    },
+    "scenario2_firewall": {
+      "description": "Connection Timeout + Ping通 - 防火墙策略未开",
+      "source": "server1",
+      "target": "server2",
+      "port": 80,
+      "commands": {
+        "telnet_test": {
+          "device": "server1",
+          "command": "timeout 5 bash -c '</dev/tcp/10.0.2.20/80' 2>&1 && echo 'SUCCESS' || echo 'FAILED'",
+          "stdout": "",
+          "stderr": "bash: connect: Connection timed out\nFAILED",
+          "success": false,
+          "exit_code": 1,
+          "execution_time": 5.012,
+          "timestamp": "2026-01-13T10:05:00Z"
+        },
+        "ping": {
+          "device": "server1",
+          "command": "ping -c 4 -W 5 10.0.2.20",
+          "stdout": "PING 10.0.2.20 (10.0.2.20) 56(84) bytes of data.\n64 bytes from 10.0.2.20: icmp_seq=1 ttl=64 time=0.234 ms\n64 bytes from 10.0.2.20: icmp_seq=2 ttl=64 time=0.189 ms\n64 bytes from 10.0.2.20: icmp_seq=3 ttl=64 time=0.201 ms\n64 bytes from 10.0.2.20: icmp_seq=4 ttl=64 time=0.198 ms\n\n--- 10.0.2.20 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3001ms\nrtt min/avg/max/mdev = 0.189/0.205/0.234/0.018 ms",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 3.125,
+          "timestamp": "2026-01-13T10:05:05Z"
+        },
+        "ss_listen": {
+          "device": "server2",
+          "command": "ss -tunlp | grep ':80'",
+          "stdout": "tcp   LISTEN  0   128   *:80   *:*   users:((\"nginx\",pid=1234,fd=6))",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 0.091,
+          "timestamp": "2026-01-13T10:05:08Z"
+        },
+        "iptables_list": {
+          "device": "server2",
+          "command": "iptables -L INPUT -n -v",
+          "stdout": "Chain INPUT (policy DROP)\npkts bytes target  prot opt in  out  source      destination\n100  6000  ACCEPT  tcp  --  *   *   0.0.0.0/0   0.0.0.0/0   tcp dpt:22\n  0     0  DROP    tcp  --  *   *   0.0.0.0/0   0.0.0.0/0   tcp dpt:80",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 0.123,
+          "timestamp": "2026-01-13T10:05:09Z"
+        }
+      },
+      "expected_root_cause": "server2的防火墙阻止了80端口入站流量",
+      "expected_confidence": 0.95
+    },
+    "scenario3_network_broken": {
+      "description": "Connection Timeout + Ping不通 + Traceroute定位断点",
+      "source": "server1",
+      "target": "server2",
+      "port": 80,
+      "commands": {
+        "telnet_test": {
+          "device": "server1",
+          "command": "timeout 5 bash -c '</dev/tcp/10.0.2.20/80' 2>&1 && echo 'SUCCESS' || echo 'FAILED'",
+          "stdout": "",
+          "stderr": "bash: connect: Connection timed out\nFAILED",
+          "success": false,
+          "exit_code": 1,
+          "execution_time": 5.021,
+          "timestamp": "2026-01-13T10:10:00Z"
+        },
+        "ping": {
+          "device": "server1",
+          "command": "ping -c 4 -W 5 10.0.2.20",
+          "stdout": "PING 10.0.2.20 (10.0.2.20) 56(84) bytes of data.\n\n--- 10.0.2.20 ping statistics ---\n4 packets transmitted, 0 received, 100% packet loss, time 3001ms",
+          "stderr": "",
+          "exit_code": 1,
+          "execution_time": 3.145,
+          "timestamp": "2026-01-13T10:10:05Z"
+        },
+        "traceroute": {
+          "device": "server1",
+          "command": "traceroute -m 30 -w 3 10.0.2.20",
+          "stdout": "traceroute to 10.0.2.20 (10.0.2.20), 30 hops max, 60 byte packets\n 1  10.10.1.1 (10.10.1.1)  0.512 ms  0.389 ms  0.301 ms\n 2  10.10.10.1 (10.10.10.1)  1.234 ms  1.123 ms  1.089 ms\n 3  * * *\n 4  * * *\n 5  * * *",
+          "stderr": "",
+          "exit_code": 0,
+          "execution_time": 15.678,
+          "timestamp": "2026-01-13T10:10:08Z"
+        }
+      },
+      "expected_root_cause": "网络路径在第3跳断开，疑似leaf-02交换机故障或路由配置问题",
+      "expected_confidence": 0.85
+    }
+  }
+}

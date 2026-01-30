@@ -1,0 +1,189 @@
+# 端口不可达故障排查流程
+# Port Unreachable Diagnostic Workflow
+
+name: port_unreachable
+description: 服务器A到服务器B端口访问不通的排查流程
+version: "1.0"
+fault_type: port_unreachable
+
+# 流程变量定义
+variables:
+  source_host: "${task.source}"       # 源服务器
+  target_host: "${task.target}"       # 目标服务器
+  target_ip: "${task.target_ip}"      # 目标IP
+  target_port: "${task.port}"         # 目标端口
+
+# 排查步骤定义
+steps:
+  # Step 1: Telnet端口测试
+  - id: telnet_test
+    name: "端口连通性测试"
+    description: "从源服务器telnet目标端口，判断是refused还是timeout"
+    action: execute_command
+    command: telnet_test
+    on_host: "${source_host}"
+    params:
+      target: "${target_ip}"
+      port: "${target_port}"
+      timeout: 5
+    on_success:
+      # telnet成功，端口是通的
+      goto: end_success
+      conclusion:
+        root_cause: "端口连通正常"
+        confidence: 1.0
+    on_failure:
+      # 根据错误类型分支
+      switch: "${result.error_type}"
+      cases:
+        refused:
+          goto: check_port_listening
+        timeout:
+          goto: ping_test
+        unknown:
+          goto: ping_test
+
+  # Step 2a: 检查端口监听 (telnet refused分支)
+  - id: check_port_listening
+    name: "检查目标端口监听状态"
+    description: "登录目标服务器，检查端口是否在监听"
+    action: execute_command
+    command: ss_listen
+    on_host: "${target_host}"
+    params:
+      port: "${target_port}"
+    on_success:
+      # 端口在监听，但是refused - 可能是服务问题
+      goto: end_analysis
+      conclusion:
+        root_cause: "端口在监听但连接被拒绝，可能是服务配置问题或防火墙"
+        confidence: 0.7
+    on_failure:
+      # 端口未监听
+      goto: end_analysis
+      conclusion:
+        root_cause: "网络是通的，目标服务器${target_host}上的${target_port}端口服务未启动"
+        confidence: 0.95
+        suggestions:
+          - "检查服务状态: systemctl status <service_name>"
+          - "启动服务: systemctl start <service_name>"
+          - "查看服务日志: journalctl -u <service_name>"
+
+  # Step 2b: Ping测试 (telnet timeout分支)
+  - id: ping_test
+    name: "基础连通性测试"
+    description: "从源服务器ping目标IP"
+    action: execute_command
+    command: ping
+    on_host: "${source_host}"
+    params:
+      target: "${target_ip}"
+      count: 4
+      timeout: 5
+    on_success:
+      # ping通但端口不通 → 检查防火墙/安全组
+      goto: check_firewall
+    on_failure:
+      # ping不通 → 检查是否禁ping
+      goto: ping_gateway
+
+  # Step 3a: 检查防火墙/安全组 (ping通分支)
+  - id: check_firewall
+    name: "检查防火墙/安全组策略"
+    description: "ping通但端口不通，检查防火墙或安全组是否放行"
+    action: query_firewall_policy
+    params:
+      host: "${target_host}"
+      port: "${target_port}"
+      source_ip: "${task.source_ip}"
+    on_success:
+      # 策略已开放，可能是其他问题
+      goto: check_port_listening
+    on_failure:
+      # 策略未开放
+      goto: end_analysis
+      conclusion:
+        root_cause: "防火墙/安全组策略阻止了${target_port}端口的入站流量"
+        confidence: 0.95
+        suggestions:
+          - "在防火墙上添加放行规则: iptables -I INPUT -p tcp --dport ${target_port} -j ACCEPT"
+          - "或在云安全组中添加入站规则"
+          - "修改前请确认符合安全策略"
+
+  # Step 3b: Ping网关 (ping不通分支)
+  - id: ping_gateway
+    name: "Ping目标网关地址"
+    description: "查询目标IP的网关地址并进行ping测试"
+    action: query_and_ping_gateway
+    params:
+      target_ip: "${target_ip}"
+      source_host: "${source_host}"
+    on_success:
+      # 网关能ping通，目标可能禁ping
+      goto: end_analysis
+      conclusion:
+        root_cause: "目标服务器${target_host}可能禁用了ICMP（禁ping），需要进一步验证"
+        confidence: 0.8
+        suggestions:
+          - "确认目标服务器是否禁ping"
+          - "尝试使用telnet其他已知开放端口验证网络连通性"
+          - "联系目标服务器管理员确认ICMP策略"
+    on_failure:
+      # 网关也不通 → traceroute定位断点
+      goto: traceroute_test
+
+  # Step 4: Traceroute定位断点
+  - id: traceroute_test
+    name: "路由追踪定位断点"
+    description: "执行traceroute定位网络断点位置"
+    action: execute_command
+    command: traceroute
+    on_host: "${source_host}"
+    params:
+      target: "${target_ip}"
+      max_hops: 30
+      timeout: 3
+    next: analyze_traceroute
+
+  # Step 5: 分析Traceroute结果
+  - id: analyze_traceroute
+    name: "分析traceroute断点"
+    description: "识别traceroute在哪个节点断开"
+    action: analyze_traceroute_result
+    params:
+      traceroute_result: "${steps.traceroute_test.result}"
+      cmdb_topology: "${task.topology}"
+    on_success:
+      # 成功识别断点设备
+      goto: check_network_device
+    on_failure:
+      # 无法识别断点
+      goto: end_analysis
+      conclusion:
+        root_cause: "网络路径存在问题，但无法精确定位断点"
+        confidence: 0.6
+        need_human: true
+
+  # Step 6: 登录网络设备检查路由策略
+  - id: check_network_device
+    name: "检查断点网络设备路由策略"
+    description: "登录断点网络设备，查询路由和ACL策略"
+    action: query_network_device_policy
+    params:
+      device_name: "${steps.analyze_traceroute.failed_device}"
+      target_network: "${target_ip}"
+    next: end_analysis
+
+  # 结束节点：分析汇总
+  - id: end_analysis
+    name: "生成诊断报告"
+    action: generate_report
+    is_terminal: true
+
+  - id: end_success
+    name: "连接正常"
+    action: generate_report
+    is_terminal: true
+    conclusion:
+      root_cause: "端口连通正常，无故障"
+      confidence: 1.0

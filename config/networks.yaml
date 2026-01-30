@@ -1,0 +1,33 @@
+# 网络配置文件
+#
+# 支持为不同网络配置不同的自动化平台API，实现网络隔离和分布式诊断
+#
+# 配置说明：
+# - name: 网络名称（唯一标识）
+# - api_url: 自动化平台API地址
+# - api_token: API令牌（支持环境变量，格式：${ENV_VAR_NAME}）
+# - networks: 该网络负责的网络段（CIDR格式）
+
+networks:
+  # 网络A - 10.0.0.0/8网段
+  - name: "network_a"
+    api_url: "http://automation-api-a.example.com/v1"
+    api_token: "${AUTOMATION_API_TOKEN_A}"
+    networks:
+      - "10.0.0.0/8"
+      - "192.168.1.0/24"
+
+  # 网络B - 172.16.0.0/12网段
+  - name: "network_b"
+    api_url: "http://automation-api-b.example.com/v1"
+    api_token: "${AUTOMATION_API_TOKEN_B}"
+    networks:
+      - "172.16.0.0/12"
+      - "192.168.2.0/24"
+
+  # 网络C - 其他网段
+  - name: "network_c"
+    api_url: "http://automation-api-c.example.com/v1"
+    api_token: "${AUTOMATION_API_TOKEN_C}"
+    networks:
+      - "192.168.3.0/24"

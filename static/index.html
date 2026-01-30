@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>netOpsAgent - AI 诊断助手</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="chat-container">
+        <header class="chat-header">
+            <h1>🤖 AI 网络访问关系诊断助手</h1>
+            <p class="subtitle">智能对话式故障排查</p>
+        </header>
+
+        <main class="chat-main">
+            <!-- 消息列表 -->
+            <div class="messages-container" id="messages-container">
+                <!-- 欢迎消息 -->
+                <div class="message assistant-message">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            你好！我是 AI 网络访问关系诊断助手。请描述你遇到的网络故障，我会帮你分析根本原因。
+                            <br><br>
+                            例如：<code>10.0.1.10到10.0.2.20端口80不通</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="input-container">
+                <form id="chat-form">
+                    <div class="input-wrapper">
+                        <textarea id="user-input" placeholder="描述你的网络故障..." rows="1" autofocus></textarea>
+                        <button type="submit" id="send-btn" class="send-btn">
+                            <span class="send-icon">▶</span>
+                        </button>
+                        <button type="button" id="stop-btn" class="stop-btn" title="停止生成">
+                            <span class="send-icon">⏹</span>
+                        </button>
+                    </div>
+                    <div class="input-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="use-llm" checked>
+                            <span>使用 LLM 智能解析</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="verbose">
+                            <span>详细模式</span>
+                        </label>
+                    </div>
+                </form>
+            </div>
+        </main>
+
+        <footer class="chat-footer">
+            <p>netOpsAgent v2.0 | <a href="/docs" target="_blank">API 文档</a> | <a href="/static/history.html">📚
+                    聊天记录</a></p>
+        </footer>
+    </div>
+
+    <!-- 加载指示器模板 -->
+    <template id="loading-template">
+        <div class="message assistant-message">
+            <div class="message-avatar">🤖</div>
+            <div class="message-content">
+                <div class="message-text">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 工具调用模板 -->
+    <template id="tool-call-template">
+        <div class="tool-call-card">
+            <div class="tool-header">
+                <span class="tool-icon">🔧</span>
+                <span class="tool-name"></span>
+                <span class="tool-status"></span>
+            </div>
+            <div class="tool-details">
+                <div class="tool-arguments"></div>
+                <div class="tool-result"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 问题询问模板 -->
+    <template id="question-template">
+        <div class="message assistant-message">
+            <div class="message-avatar">🤖</div>
+            <div class="message-content">
+                <div class="message-text question-message">
+                    <div class="question-icon">❓</div>
+                    <div class="question-text"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 最终报告模板 -->
+    <template id="report-template">
+        <div class="final-report-card">
+            <h3>📋 诊断报告</h3>
+            <div class="report-item">
+                <strong>根因分析：</strong>
+                <p class="root-cause"></p>
+            </div>
+            <div class="report-item">
+                <strong>置信度：</strong>
+                <p class="confidence"></p>
+            </div>
+            <div class="report-item">
+                <strong>修复建议：</strong>
+                <ul class="suggestions"></ul>
+            </div>
+        </div>
+    </template>
+
+    <script src="/static/app.js?v=2.3"></script>
+</body>
+
+</html>

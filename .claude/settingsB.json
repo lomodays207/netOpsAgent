@@ -1,0 +1,12 @@
+{
+  "env": {
+    "HTTP_PROXY": "http://127.0.0.1:10809",
+    "HTTPS_PROXY": "http://127.0.0.1:10809",
+    "ANTHROPIC_AUTH_TOKEN": "sk-poTlQzsmmNpEXmYHZSjEJRB5MJoXN8QhHHOcRWNcRJHbcjC6",
+    "ANTHROPIC_BASE_URL": "https://anyrouter.top",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "enabledPlugins": {
+    "document-skills@anthropic-agent-skills": true
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /b)",
+      "Bash(python -m pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m ensurepip:*)",
+      "Bash(python -m pip install:*)",
+      "Bash(python -m src.cli:*)",
+      "Bash(ls:*)",
+      "Bash(python:*)",
+      "Bash(test:*)",
+      "Bash(findstr:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(where:*)",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -m pip:*)",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -c \"from src.integrations.llm_client import LLMClient; print\\(''llm_client.py 导入成功''\\)\")",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -c \"from src.agent.llm_agent import LLMAgent; print\\(''llm_agent.py 导入成功''\\)\")",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\":*)",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -c \"\nimport sys\nsys.path.insert\\(0, ''D:/study/aicode/netOpsAgent/src''\\)\n\nfrom integrations.llm_client import LLMClient\n\nclient = LLMClient\\(\\)\nprint\\(''LLMClient 初始化成功''\\)\n\nresponse = client.invoke\\(prompt=''你好，请简单用一句话自我介绍'', temperature=0.7\\)\nprint\\(f''invoke 测试成功: {response[:100]}...'' if len\\(response\\) > 100 else f''invok e测试成功: {response}''\\)\n\ndef test_func\\(a, b\\):\n    return {''result'': a + b}\n\nclient.register_tool\\(\n    name=''test_tool'',\n    func=test_func,\n    description=''测试工具'',\n    parameters_schema={''type'': ''object'', ''properties'': {''a'': {''type'': ''integer''}, ''b'': {''type'': ''integer''}}}\n\\)\nprint\\(''register_tool 测试成功''\\)\n\ntools = [{\n    ''type'': ''function'',\n    ''function'': {\n        ''name'': ''test_tool'',\n        ''description'': ''测试工具'',\n        ''parameters'': {\n            ''type'': ''object'',\n            ''properties'': {''a'': {''type'': ''integer''}, ''b'': {''type'': ''integer''}},\n            ''required'': [''a'', ''b'']\n        }\n    }\n}]\n\nresponse = client.invoke_with_tools\\(prompt=''请调用 test_tool 工具，参数 a=5, b=3'', tools=tools, temperature=0.3\\)\nprint\\(f''invoke_with_tools 测试结果: {response}''\\)\nprint\\(''测试完成!''\\)\n\")",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" \"D:/study/aicode/netOpsAgent/src/integrations/llm_client.py\")",
+      "Bash(\"C:\\\\Users\\\\grant\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" \"D:/study/aicode/netOpsAgent/test_llm_client.py\")",
+      "Bash(copy:*)",
+      "Bash(iconv:*)",
+      "Bash(.venv/Scripts/python.exe -m pip install fastapi uvicorn)",
+      "Bash(.venv/Scripts/uvicorn.exe src.api:app --host 127.0.0.1 --port 8000)",
+      "Bash(timeout /t 3 /nobreak)",
+      "Bash(curl http://127.0.0.1:8000/health)",
+      "Bash(curl -X POST \"http://127.0.0.1:8000/api/v1/diagnose\" -H \"Content-Type: application/json\" -d \"{\"\"description\"\": \"\"10.0.1.10到10.0.2.20端口80不通\"\", \"\"use_llm\"\": true, \"\"verbose\"\": false}\")",
+      "Bash(.venv/Scripts/python.exe test_api.py)",
+      "Bash(curl -X POST http://127.0.0.1:8000/api/v1/diagnose -H \"Content-Type: application/json\" --data-binary @test_req.json)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(cmd.exe /c start_api.bat)",
+      "Bash(.venv/Scripts/uvicorn.exe:*)",
+      "Bash(.venv/Scripts/python.exe test_tool_calls.py)",
+      "Bash(curl:*)",
+      "Bash(pytest:*)",
+      "Bash(tree:*)",
+      "Bash(dir:*)"
+    ]
+  }
+}

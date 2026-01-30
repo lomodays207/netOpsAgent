@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netOpsAgent"
+version = "1.0.0"
+description = "Intelligent network troubleshooting agent for data center environments"
+authors = [{name = "NetOps Team", email = "netops@example.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "structlog>=23.0",
+    "typer>=0.9",
+    "rich>=13.0",
+    "aiohttp>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.1",
+    "black>=23.0",
+    "mypy>=1.5",
+    "ruff>=0.1",
+]
+
+[project.scripts]
+netops = "src.cli:main"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | __pycache__
+  | runtime
+)/
+'''
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+exclude = [
+    "tests/",
+    "runtime/",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+asyncio_mode = "auto"
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    ".git",
+    "__pycache__",
+    "runtime",
+    ".venv",
+]

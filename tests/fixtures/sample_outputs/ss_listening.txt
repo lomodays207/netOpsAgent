@@ -1,0 +1,1 @@
+tcp   LISTEN  0   128   *:80   *:*   users:(("nginx",pid=1234,fd=6))

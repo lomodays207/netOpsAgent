@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>localStorage 测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .output {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 localStorage 功能测试</h1>
+
+    <div class="test-section">
+        <h2>1. 保存测试数据</h2>
+        <button onclick="saveTestData()">保存会话ID和消息</button>
+        <div id="save-output" class="output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. 读取测试数据</h2>
+        <button onclick="loadTestData()">读取保存的数据</button>
+        <div id="load-output" class="output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 清除测试数据</h2>
+        <button onclick="clearTestData()">清除所有数据</button>
+        <div id="clear-output" class="output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. 查看所有 localStorage</h2>
+        <button onclick="showAllStorage()">显示所有存储</button>
+        <div id="all-output" class="output"></div>
+    </div>
+
+    <script>
+        function saveTestData() {
+            const output = document.getElementById('save-output');
+            try {
+                // 保存会话ID
+                const sessionId = 'test_session_' + Date.now();
+                localStorage.setItem('currentSessionId', sessionId);
+
+                // 保存消息
+                const messages = [
+                    { role: 'user', content: '测试消息1', timestamp: new Date().toISOString() },
+                    { role: 'assistant', content: '测试回复1', timestamp: new Date().toISOString() }
+                ];
+                localStorage.setItem('chatMessages', JSON.stringify(messages));
+
+                output.innerHTML = `<span class="success">✅ 保存成功！</span>\n`;
+                output.innerHTML += `会话ID: ${sessionId}\n`;
+                output.innerHTML += `消息数量: ${messages.length}`;
+            } catch (e) {
+                output.innerHTML = `<span class="error">❌ 保存失败: ${e.message}</span>`;
+            }
+        }
+
+        function loadTestData() {
+            const output = document.getElementById('load-output');
+            try {
+                const sessionId = localStorage.getItem('currentSessionId');
+                const messagesStr = localStorage.getItem('chatMessages');
+
+                if (!sessionId && !messagesStr) {
+                    output.innerHTML = '<span class="error">⚠️ 没有找到保存的数据</span>';
+                    return;
+                }
+
+                output.innerHTML = `<span class="success">✅ 读取成功！</span>\n\n`;
+                output.innerHTML += `会话ID: ${sessionId || '(无)'}\n\n`;
+
+                if (messagesStr) {
+                    const messages = JSON.parse(messagesStr);
+                    output.innerHTML += `消息历史 (${messages.length}条):\n`;
+                    messages.forEach((msg, i) => {
+                        output.innerHTML += `  ${i + 1}. [${msg.role}] ${msg.content}\n`;
+                    });
+                }
+            } catch (e) {
+                output.innerHTML = `<span class="error">❌ 读取失败: ${e.message}</span>`;
+            }
+        }
+
+        function clearTestData() {
+            const output = document.getElementById('clear-output');
+            try {
+                localStorage.removeItem('currentSessionId');
+                localStorage.removeItem('chatMessages');
+                output.innerHTML = '<span class="success">✅ 数据已清除</span>';
+            } catch (e) {
+                output.innerHTML = `<span class="error">❌ 清除失败: ${e.message}</span>`;
+            }
+        }
+
+        function showAllStorage() {
+            const output = document.getElementById('all-output');
+            try {
+                output.innerHTML = `localStorage 中的所有数据:\n\n`;
+                if (localStorage.length === 0) {
+                    output.innerHTML += '(空)';
+                } else {
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        const value = localStorage.getItem(key);
+                        output.innerHTML += `${key}:\n${value}\n\n`;
+                    }
+                }
+            } catch (e) {
+                output.innerHTML = `<span class="error">❌ 错误: ${e.message}</span>`;
+            }
+        }
+
+        // 页面加载时自动显示当前存储
+        window.addEventListener('load', () => {
+            showAllStorage();
+        });
+    </script>
+</body>
+
+</html>

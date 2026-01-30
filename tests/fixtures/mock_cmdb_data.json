@@ -1,0 +1,140 @@
+{
+  "servers": [
+    {
+      "hostname": "server1",
+      "ip": "10.0.1.10",
+      "device_type": "physical_server",
+      "leaf_switch": "leaf-01",
+      "rack": "A01-R01",
+      "status": "online"
+    },
+    {
+      "hostname": "server2",
+      "ip": "10.0.2.20",
+      "device_type": "physical_server",
+      "leaf_switch": "leaf-02",
+      "rack": "A01-R02",
+      "status": "online"
+    },
+    {
+      "hostname": "server3",
+      "ip": "10.0.1.11",
+      "device_type": "vm",
+      "leaf_switch": "leaf-01",
+      "rack": "A01-R01",
+      "status": "online"
+    },
+    {
+      "hostname": "web-01",
+      "ip": "10.0.3.10",
+      "device_type": "physical_server",
+      "leaf_switch": "leaf-03",
+      "rack": "A02-R01",
+      "status": "online"
+    },
+    {
+      "hostname": "db-01",
+      "ip": "10.0.4.10",
+      "device_type": "physical_server",
+      "leaf_switch": "leaf-04",
+      "rack": "A02-R02",
+      "status": "online"
+    }
+  ],
+  "switches": [
+    {
+      "name": "leaf-01",
+      "mgmt_ip": "10.10.1.1",
+      "vendor": "cisco",
+      "model": "nexus-9300",
+      "type": "leaf",
+      "uplinks": ["spine-01", "spine-02"],
+      "connected_servers": ["server1", "server3"]
+    },
+    {
+      "name": "leaf-02",
+      "mgmt_ip": "10.10.1.2",
+      "vendor": "cisco",
+      "model": "nexus-9300",
+      "type": "leaf",
+      "uplinks": ["spine-01", "spine-02"],
+      "connected_servers": ["server2"]
+    },
+    {
+      "name": "leaf-03",
+      "mgmt_ip": "10.10.1.3",
+      "vendor": "cisco",
+      "model": "nexus-9300",
+      "type": "leaf",
+      "uplinks": ["spine-01", "spine-02"],
+      "connected_servers": ["web-01"]
+    },
+    {
+      "name": "leaf-04",
+      "mgmt_ip": "10.10.1.4",
+      "vendor": "cisco",
+      "model": "nexus-9300",
+      "type": "leaf",
+      "uplinks": ["spine-01", "spine-02"],
+      "connected_servers": ["db-01"]
+    },
+    {
+      "name": "spine-01",
+      "mgmt_ip": "10.10.10.1",
+      "vendor": "cisco",
+      "model": "nexus-9500",
+      "type": "spine",
+      "downlinks": ["leaf-01", "leaf-02", "leaf-03", "leaf-04"]
+    },
+    {
+      "name": "spine-02",
+      "mgmt_ip": "10.10.10.2",
+      "vendor": "cisco",
+      "model": "nexus-9500",
+      "type": "spine",
+      "downlinks": ["leaf-01", "leaf-02", "leaf-03", "leaf-04"]
+    }
+  ],
+  "topology": {
+    "server1_to_server2": {
+      "source": {
+        "hostname": "server1",
+        "ip": "10.0.1.10",
+        "leaf_switch": "leaf-01"
+      },
+      "target": {
+        "hostname": "server2",
+        "ip": "10.0.2.20",
+        "leaf_switch": "leaf-02"
+      },
+      "spine_switches": ["spine-01"],
+      "same_leaf": false,
+      "path": ["server1", "leaf-01", "spine-01", "leaf-02", "server2"],
+      "device_details": {
+        "leaf-01": {"ip": "10.10.1.1", "type": "leaf_switch"},
+        "spine-01": {"ip": "10.10.10.1", "type": "spine_switch"},
+        "leaf-02": {"ip": "10.10.1.2", "type": "leaf_switch"}
+      }
+    },
+    "web-01_to_db-01": {
+      "source": {
+        "hostname": "web-01",
+        "ip": "10.0.3.10",
+        "leaf_switch": "leaf-03"
+      },
+      "target": {
+        "hostname": "db-01",
+        "ip": "10.0.4.10",
+        "leaf_switch": "leaf-04"
+      },
+      "spine_switches": ["spine-01"],
+      "same_leaf": false,
+      "path": ["web-01", "leaf-03", "spine-01", "leaf-04", "db-01"],
+      "device_details": {
+        "leaf-03": {"ip": "10.10.1.3", "type": "leaf_switch"},
+        "spine-01": {"ip": "10.10.10.1", "type": "spine_switch"},
+        "leaf-04": {"ip": "10.10.1.4", "type": "leaf_switch"}
+      }
+    }
+  }
+}

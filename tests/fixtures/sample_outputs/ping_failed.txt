@@ -1,0 +1,4 @@
+PING 10.0.2.20 (10.0.2.20) 56(84) bytes of data.
+
+--- 10.0.2.20 ping statistics ---
+4 packets transmitted, 0 received, 100% packet loss, time 3001ms
