@@ -2,6 +2,7 @@
   "env": {
     "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
     "ANTHROPIC_AUTH_TOKEN": "sk-kimi-Qgw8cdsrQn80aR3rgeZK7kanpl2hH5OHVkczS0S2TjpahStTkMkzZOeeHYK0A90C",
-    "API_TIMEOUT_MS": "3000000"
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_MODEL": "K2.5"
   }
 }

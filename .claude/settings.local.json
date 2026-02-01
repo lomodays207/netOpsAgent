@@ -37,7 +37,10 @@
       "Bash(curl:*)",
       "Bash(pytest:*)",
       "Bash(tree:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Skill(commit)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
     ]
   }
 }
