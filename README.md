@@ -162,7 +162,6 @@ make clean
 ## 联系方式
 
 - 项目维护者: NetOps Team
-- Email: netops@example.com
 - 项目主页: https://github.com/yourorg/netOpsAgent
 
 ## 致谢
