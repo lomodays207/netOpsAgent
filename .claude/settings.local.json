@@ -40,7 +40,10 @@
       "Bash(dir:*)",
       "Skill(commit)",
       "Bash(git commit:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(tasklist)",
+      "Bash(find . -name \"*.pyc\" -delete)",
+      "Bash(find . -name \"__pycache__\" -type d -exec rm -rf {} +)"
     ]
   }
 }

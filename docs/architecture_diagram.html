@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>netOpsAgent 技术架构图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 30px 20px;
+        }
+
+        .arch-container {
+            width: 1100px;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* 标题栏 */
+        .arch-header {
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            color: white;
+            text-align: center;
+            padding: 22px 30px;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 4px;
+            position: relative;
+        }
+
+        .arch-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 2px;
+        }
+
+        .arch-body {
+            padding: 24px 30px 30px;
+        }
+
+        /* 每一层 */
+        .layer {
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .layer:last-child {
+            margin-bottom: 0;
+        }
+
+        .layer-row {
+            display: flex;
+            align-items: stretch;
+            min-height: 80px;
+        }
+
+        /* 左侧标签 */
+        .layer-label {
+            width: 120px;
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: 2px;
+            padding: 10px 0;
+        }
+
+        /* 右侧内容区 */
+        .layer-content {
+            flex: 1;
+            border-radius: 12px;
+            padding: 16px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* 层间箭头已移除 */
+
+        /* ========== 各层颜色主题 ========== */
+
+        /* 客户端层 - 深蓝 */
+        .layer-client .layer-content {
+            background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+            border: 2px solid #93c5fd;
+        }
+
+        /* API网关层 - 天蓝 */
+        .layer-gateway .layer-content {
+            background: linear-gradient(135deg, #cffafe 0%, #ecfeff 100%);
+            border: 2px solid #67e8f9;
+        }
+
+        /* 应用核心层 - 绿色 */
+        .layer-core .layer-content {
+            background: linear-gradient(135deg, #d1fae5 0%, #ecfdf5 100%);
+            border: 2px solid #6ee7b7;
+        }
+
+        /* AI/LLM引擎层 - 紫色 */
+        .layer-ai .layer-content {
+            background: linear-gradient(135deg, #e9d5ff 0%, #faf5ff 100%);
+            border: 2px solid #c084fc;
+        }
+
+        /* RAG知识检索层 - 橙色 */
+        .layer-rag .layer-content {
+            background: linear-gradient(135deg, #fed7aa 0%, #fff7ed 100%);
+            border: 2px solid #fdba74;
+        }
+
+        /* 外部集成层 - 灰蓝 */
+        .layer-integration .layer-content {
+            background: linear-gradient(135deg, #e2e8f0 0%, #f8fafc 100%);
+            border: 2px solid #94a3b8;
+        }
+
+        /* 数据存储层 - 黄色 */
+        .layer-db .layer-content {
+            background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+            border: 2px solid #fcd34d;
+        }
+
+        /* 运行环境层 - 灰色 */
+        .layer-runtime .layer-content {
+            background: linear-gradient(135deg, #f1f5f9 0%, #f8fafc 100%);
+            border: 2px solid #cbd5e1;
+        }
+
+        /* ========== 卡片/标签样式 ========== */
+
+        .tech-card {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            border-radius: 10px;
+            padding: 10px 18px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            cursor: default;
+        }
+
+        .tech-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .tech-card .icon {
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .tech-card .text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #334155;
+            white-space: nowrap;
+        }
+
+        .tech-card .sub-text {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 400;
+        }
+
+        /* 分组容器 */
+        .tech-group {
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 10px;
+            padding: 12px 16px;
+            border: 1px dashed rgba(0, 0, 0, 0.12);
+        }
+
+        .tech-group-title {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tech-group-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        /* 双列布局 */
+        .dual-column {
+            display: flex;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .dual-column .column {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
+            padding: 14px 16px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .column-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #475569;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .column-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        /* 小型标签 */
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #334155;
+            background: white;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        /* 特殊高亮卡片 */
+        .highlight-card {
+            background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 14px 22px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+        }
+
+        .highlight-card .icon {
+            font-size: 26px;
+        }
+
+        .highlight-card .text {
+            font-size: 15px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .highlight-card .sub-text {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        /* 连接标注 */
+        .connector-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 12px;
+            background: rgba(100, 116, 139, 0.08);
+            border-radius: 20px;
+        }
+
+        /* 页脚 */
+        .arch-footer {
+            text-align: center;
+            padding: 16px;
+            color: #94a3b8;
+            font-size: 12px;
+            border-top: 1px solid #f1f5f9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="arch-container">
+        <!-- 标题 -->
+        <div class="arch-header">
+            netOpsAgent 智能网络运维Agent 技术架构图
+        </div>
+
+        <div class="arch-body">
+
+            <!-- ========== 第1层: 客户端访问层 ========== -->
+            <div class="layer layer-client">
+                <div class="layer-row">
+                    <div class="layer-label">客户端</div>
+                    <div class="layer-content">
+                        <div class="tech-card">
+                            <span class="icon">🖥️</span>
+                            <div>
+                                <div class="text">Web 管理界面</div>
+                                <div class="sub-text">HTML / CSS / JavaScript</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">💬</span>
+                            <div>
+                                <div class="text">AI 对话界面</div>
+                                <div class="sub-text">自然语言交互诊断</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">📚</span>
+                            <div>
+                                <div class="text">知识库管理</div>
+                                <div class="sub-text">文档上传 / 检索</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">📋</span>
+                            <div>
+                                <div class="text">历史记录</div>
+                                <div class="sub-text">诊断会话回溯</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">⌨️</span>
+                            <div>
+                                <div class="text">CLI 命令行</div>
+                                <div class="sub-text">Typer + Rich</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第2层: API网关/服务层 ========== -->
+            <div class="layer layer-gateway">
+                <div class="layer-row">
+                    <div class="layer-label">API 服务层</div>
+                    <div class="layer-content">
+                        <div class="highlight-card">
+                            <span class="icon">⚡</span>
+                            <div>
+                                <div class="text">FastAPI</div>
+                                <div class="sub-text">异步 RESTful API 框架</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🔄</span>
+                            <div>
+                                <div class="text">Uvicorn</div>
+                                <div class="sub-text">ASGI 高性能服务器</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">📡</span>
+                            <div>
+                                <div class="text">RESTful API</div>
+                                <div class="sub-text">/diagnose /knowledge /history</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🔐</span>
+                            <div>
+                                <div class="text">Pydantic</div>
+                                <div class="sub-text">数据校验 & 序列化</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第3层: 应用核心层（Agent 引擎） ========== -->
+            <div class="layer layer-core">
+                <div class="layer-row">
+                    <div class="layer-label">应用核心层</div>
+                    <div class="layer-content">
+                        <div class="dual-column">
+                            <div class="column">
+                                <div class="column-title">🤖 Agent 引擎</div>
+                                <div class="column-items">
+                                    <div class="tag">🧠 NLU 自然语言理解</div>
+                                    <div class="tag">📋 Planner 任务规划器</div>
+                                    <div class="tag">⚙️ Executor 执行引擎</div>
+                                    <div class="tag">📊 Analyzer 结果分析器</div>
+                                    <div class="tag">📝 Reporter 报告生成器</div>
+                                    <div class="tag">💡 LLM Agent 智能推理</div>
+                                </div>
+                            </div>
+                            <div class="column">
+                                <div class="column-title">🔧 功能模块</div>
+                                <div class="column-items">
+                                    <div class="tag">🔍 故障诊断流程</div>
+                                    <div class="tag">🗂️ 会话管理器</div>
+                                    <div class="tag">📑 YAML 工作流引擎</div>
+                                    <div class="tag">🛡️ 命令白名单</div>
+                                    <div class="tag">📃 Markdown 报告</div>
+                                    <div class="tag">🔌 MCP 协议支持</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第4层: AI/LLM 引擎层 ========== -->
+            <div class="layer layer-ai">
+                <div class="layer-row">
+                    <div class="layer-label">AI 引擎层</div>
+                    <div class="layer-content">
+                        <div class="dual-column">
+                            <div class="column">
+                                <div class="column-title">🧩 AI 框架</div>
+                                <div class="column-items">
+                                    <div class="tag">🦜 LangChain</div>
+                                    <div class="tag">📦 LangChain-Core</div>
+                                    <div class="tag">🔗 LangChain-OpenAI</div>
+                                    <div class="tag">🔌 OpenAI SDK</div>
+                                </div>
+                            </div>
+                            <div class="column">
+                                <div class="column-title">🤖 大模型底座</div>
+                                <div class="column-items">
+                                    <div class="highlight-card" style="padding: 10px 16px;">
+                                        <span class="icon">🌟</span>
+                                        <div>
+                                            <div class="text">通义千问 Qwen</div>
+                                            <div class="sub-text">qwen3.5-plus</div>
+                                        </div>
+                                    </div>
+                                    <div class="highlight-card"
+                                        style="padding: 10px 16px; background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); box-shadow: 0 4px 12px rgba(15, 118, 110, 0.3);">
+                                        <span class="icon">🔮</span>
+                                        <div>
+                                            <div class="text">DeepSeek V3.2</div>
+                                            <div class="sub-text">深度推理模型</div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第5层: RAG 知识检索层 ========== -->
+            <div class="layer layer-rag">
+                <div class="layer-row">
+                    <div class="layer-label">RAG 检索层</div>
+                    <div class="layer-content">
+                        <div class="tech-card">
+                            <span class="icon">🗄️</span>
+                            <div>
+                                <div class="text">ChromaDB</div>
+                                <div class="sub-text">向量数据库</div>
+                            </div>
+                        </div>
+
+                        <div class="tech-card">
+                            <span class="icon">📄</span>
+                            <div>
+                                <div class="text">Document Processor</div>
+                                <div class="sub-text">文档解析 & 分块</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🔍</span>
+                            <div>
+                                <div class="text">RAG Chain</div>
+                                <div class="sub-text">检索增强生成链</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">📊</span>
+                            <div>
+                                <div class="text">Embeddings</div>
+                                <div class="sub-text">向量嵌入管理</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第6层: 外部系统集成层 ========== -->
+            <div class="layer layer-integration">
+                <div class="layer-row">
+                    <div class="layer-label">外部集成层</div>
+                    <div class="layer-content">
+                        <div class="tech-card">
+                            <span class="icon">🏢</span>
+                            <div>
+                                <div class="text">CMDB</div>
+                                <div class="sub-text">配置管理数据库</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🤖</span>
+                            <div>
+                                <div class="text">自动化平台</div>
+                                <div class="sub-text">远程命令执行</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🌐</span>
+                            <div>
+                                <div class="text">Network Tools</div>
+                                <div class="sub-text">Ping / Telnet / Traceroute</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🔌</span>
+                            <div>
+                                <div class="text">FastMCP</div>
+                                <div class="sub-text">MCP 协议客户端</div>
+                            </div>
+                        </div>
+                        <div class="connector-label">
+                            🔗 REST API / Mock
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 第7层: 数据存储层 ========== -->
+            <div class="layer layer-db">
+                <div class="layer-row">
+                    <div class="layer-label">数据存储层</div>
+                    <div class="layer-content">
+                        <div class="tech-card">
+                            <span class="icon">🗃️</span>
+                            <div>
+                                <div class="text">SQLite</div>
+                                <div class="sub-text">会话 & 诊断记录持久化</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">⚡</span>
+                            <div>
+                                <div class="text">aiosqlite</div>
+                                <div class="sub-text">异步数据库驱动</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">🗄️</span>
+                            <div>
+                                <div class="text">ChromaDB 持久化</div>
+                                <div class="sub-text">向量索引存储</div>
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <span class="icon">📂</span>
+                            <div>
+                                <div class="text">文件系统</div>
+                                <div class="sub-text">报告 / 日志 / 配置</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="arrow-row">
+                <div class="arrow-down"></div>
+            </div>
+
+
+
+        </div>
+
+        <!-- 页脚 -->
+        <div class="arch-footer">
+            netOpsAgent v1.0.0 · 智能网络故障排查Agent · 数据中心自动化运维
+        </div>
+    </div>
+</body>
+
+</html>

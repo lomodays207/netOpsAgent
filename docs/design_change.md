@@ -483,3 +483,33 @@ class ChromaEmbeddingFunction:
 
 ### 影响范围
 仅影响前端展示（`static/knowledge.html`、`static/knowledge.js`），无后端改动。
+
+---
+
+## [2026-03-04] 新增项目技术架构图
+
+### 变更背景
+项目缺少一份直观的技术架构图来展示整体技术栈、分层结构和依赖关系，不便于项目汇报和团队沟通。
+
+### 变更内容
+
+#### 新增文件: `docs/architecture_diagram.html`
+创建了一份分层式技术架构图页面，参考标准技术架构图风格，从上到下展示8个层次：
+
+1. **客户端层**: Web管理界面、AI对话界面、知识库管理、历史记录、CLI命令行
+2. **API服务层**: FastAPI、Uvicorn、RESTful API、Pydantic
+3. **应用核心层**: Agent引擎（NLU、Planner、Executor、Analyzer、Reporter、LLM Agent）+ 功能模块（故障诊断、会话管理、YAML工作流、命令白名单、MCP协议）
+4. **AI引擎层**: LangChain框架 + 大模型底座（通义千问Qwen、DeepSeek V3.2，通过ModelScope API调用）
+5. **RAG检索层**: ChromaDB向量数据库、Sentence-Transformers嵌入、文档处理器、RAG Chain
+6. **外部集成层**: CMDB、自动化平台、Network Tools、FastMCP
+7. **数据存储层**: SQLite/aiosqlite、ChromaDB持久化、文件系统、YAML配置
+8. **运行环境层**: Python 3.10+、asyncio、aiohttp、structlog、pytest
+
+### 设计特性
+- 每层使用不同渐变色主题区分（蓝、青、绿、紫、橙、灰、黄、浅灰）
+- 卡片悬停时有上移阴影微动画
+- 大模型底座使用高亮渐变卡片突出展示
+- 层间使用向下箭头连接，直观表达调用关系
+
+### 影响范围
+新增独立HTML页面，不影响现有功能。可通过 `http://localhost:8888/architecture_diagram.html` 访问。

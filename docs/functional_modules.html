@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>netOpsAgent 智能网络故障诊断系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: #f4f7f9;
+        }
+
+        .layer-title {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 4px;
+        }
+    </style>
+</head>
+
+<body class="flex items-center justify-center min-h-screen p-8">
+
+    <div class="max-w-7xl w-full bg-white rounded-2xl shadow-xl p-10 border border-gray-100">
+
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-bold text-gray-800 flex items-center justify-center gap-3">
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9">
+                    </path>
+                </svg>
+                netOpsAgent 智能网络故障诊断系统 <span class="text-blue-600">— 功能模块图</span>
+            </h1>
+        </div>
+
+        <div class="flex flex-col gap-8">
+
+            <div class="flex flex-row bg-blue-50 rounded-xl border border-blue-100 overflow-hidden shadow-sm">
+                <div
+                    class="w-20 bg-blue-600 flex items-center justify-center text-white font-bold layer-title py-8 text-lg shrink-0">
+                    支撑场景
+                </div>
+                <div class="flex-1 p-6 grid grid-cols-4 gap-4 items-center">
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        网络连通性排查</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        端口可达性排查</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">DNS
+                        解析排查</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        网络慢问题诊断</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        自动化故障报告</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        运维知识检索</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        历史诊断查询</div>
+                    <div class="bg-blue-500 text-white text-center py-2.5 rounded-lg shadow-sm text-sm font-medium">
+                        多轮对话诊断</div>
+                </div>
+            </div>
+
+            <div class="flex flex-row bg-gray-50 rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                <div
+                    class="w-20 bg-blue-700 flex items-center justify-center text-white font-bold layer-title py-8 text-lg shrink-0">
+                    平台功能
+                </div>
+                <div class="flex-1 p-6 grid grid-cols-3 gap-6">
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">诊断 Agent
+                            核心</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">NLU
+                                自然语言理解</div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">任务规划器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">命令执行引擎
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">结果分析器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">报告生成器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">LLM
+                                Agent</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">知识库 (RAG)
+                        </div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">文档处理器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">向量存储
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">文本嵌入
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">RAG 检索链
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">会话管理</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">会话创建/恢复
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">多轮对话
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">状态持久化
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">会话过期清理
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">外部系统集成
+                        </div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">LLM 客户端
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">自动化平台客户端
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">CMDB 客户端
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">网络工具集
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">多网络路由器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">配置加载器
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">工具与解析
+                        </div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">Ping 解析器
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">Telnet
+                                解析器</div>
+                            <div
+                                class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium col-span-2">
+                                Traceroute 解析器</div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">
+                                IP/防火墙解析器</div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">输入验证器
+                            </div>
+                            <div
+                                class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium col-span-2">
+                                输出格式化</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">安全机制</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">命令白名单
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">参数校验
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">IP 地址验证
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">超时控制
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">接入层</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">FastAPI
+                                HTTP API</div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">SSE 流式推送
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">CLI 命令行
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">RESTful
+                                接口</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">前端界面 (Web
+                            UI)</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">聊天诊断界面
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">历史记录管理
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">知识库管理
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">文档预览
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                        <div class="bg-blue-600 text-white text-center py-2 font-bold tracking-wider text-sm">数据存储</div>
+                        <div class="p-4 grid grid-cols-2 gap-3 flex-1 content-start">
+                            <div
+                                class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium col-span-2">
+                                SQLite 会话库</div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">诊断报告存储
+                            </div>
+                            <div class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium">向量数据库
+                            </div>
+                            <div
+                                class="bg-gray-100 text-gray-700 text-center py-2 rounded text-xs font-medium col-span-2">
+                                YAML 配置</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="flex flex-row bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div
+                    class="w-20 bg-blue-800 flex items-center justify-center text-white font-bold layer-title py-8 text-lg shrink-0">
+                    基础架构
+                </div>
+                <div class="flex-1 p-6 flex flex-col gap-3 items-center justify-center">
+                    <div
+                        class="bg-slate-400 text-white px-8 py-2.5 rounded-lg shadow-sm text-sm font-medium w-3/4 text-center tracking-wide">
+                        Python 3.10+ &nbsp;|&nbsp; FastAPI &nbsp;|&nbsp; LangChain &nbsp;|&nbsp; SQLite &nbsp;|&nbsp;
+                        Pydantic &nbsp;|&nbsp; asyncio
+                    </div>
+                    <div
+                        class="bg-slate-400 text-white px-8 py-2.5 rounded-lg shadow-sm text-sm font-medium w-3/4 text-center tracking-wide">
+                        LLM 服务 (DeepSeek / 通义千问 / OpenAI) &nbsp;|&nbsp; 自动化平台 API &nbsp;|&nbsp; CMDB API
+                    </div>
+                    <div
+                        class="bg-slate-400 text-white px-8 py-2.5 rounded-lg shadow-sm text-sm font-medium w-3/4 text-center tracking-wide">
+                        数据中心基础设施 (服务器、Spine-Leaf 交换机、防火墙、路由器等)
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+
+</html>
