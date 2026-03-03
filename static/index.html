@@ -49,6 +49,10 @@
                             <span>使用 LLM 智能解析</span>
                         </label>
                         <label class="checkbox-label">
+                            <input type="checkbox" id="use-rag" checked>
+                            <span>启用知识库检索</span>
+                        </label>
+                        <label class="checkbox-label">
                             <input type="checkbox" id="verbose">
                             <span>详细模式</span>
                         </label>
@@ -59,7 +63,7 @@
 
         <footer class="chat-footer">
             <p>netOpsAgent v2.0 | <a href="/docs" target="_blank">API 文档</a> | <a href="/static/history.html">📚
-                    聊天记录</a></p>
+                    聊天记录</a> | <a href="/static/knowledge.html">📖 知识库管理</a></p>
         </footer>
     </div>
 
@@ -81,14 +85,18 @@
 
     <!-- 工具调用模板 -->
     <template id="tool-call-template">
-        <div class="tool-call-card">
+        <div class="tool-call-card collapsed">
             <div class="tool-header">
+                <span class="tool-collapse-icon">▼</span>
                 <span class="tool-icon">🔧</span>
                 <span class="tool-name"></span>
-                <span class="tool-status"></span>
+                <span class="tool-time"></span>
+                <span class="tool-status-icon"></span>
             </div>
             <div class="tool-details">
+                <div class="tool-detail-label">参数 [Arguments]</div>
                 <div class="tool-arguments"></div>
+                <div class="tool-detail-label">结果 [Result]</div>
                 <div class="tool-result"></div>
             </div>
         </div>
@@ -126,6 +134,7 @@
         </div>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/app.js?v=2.3"></script>
 </body>
 

@@ -193,15 +193,60 @@ body {
     background: white;
     border: 1px solid var(--border-color);
     border-radius: 0.5rem;
-    padding: 0.75rem;
     margin-top: 0.5rem;
+    overflow: hidden;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+/* 左侧状态条 */
+.tool-call-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: #94a3b8; /* 默认灰色 */
+    transition: background 0.3s ease;
+}
+
+.tool-call-card.status-running::before {
+    background: var(--primary-color);
+}
+
+.tool-call-card.status-success::before {
+    background: var(--success-color);
+}
+
+.tool-call-card.status-error::before {
+    background: var(--error-color);
 }
 
 .tool-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    padding: 0.75rem;
+    padding-left: 1rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+}
+
+.tool-header:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+/* 折叠箭头 */
+.tool-collapse-icon {
+    font-size: 0.8rem;
+    transition: transform 0.3s ease;
+    color: var(--text-secondary);
+}
+
+.tool-call-card.collapsed .tool-collapse-icon {
+    transform: rotate(-90deg);
 }
 
 .tool-icon {
@@ -211,31 +256,60 @@ body {
 .tool-name {
     font-weight: 600;
     flex: 1;
+    font-size: 0.9rem;
 }
 
-.tool-status {
+/* 执行时间 */
+.tool-time {
     font-size: 0.75rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    margin-left: auto;
 }
 
-.tool-status.running {
-    background: #dbeafe;
+/* 状态图标 */
+.tool-status-icon {
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tool-status-icon.running {
     color: var(--primary-color);
 }
 
-.tool-status.success {
-    background: #d1fae5;
+.tool-status-icon.success {
     color: var(--success-color);
 }
 
-.tool-status.error {
-    background: #fee2e2;
+.tool-status-icon.error {
     color: var(--error-color);
 }
 
+/* 工具详情（可折叠部分） */
 .tool-details {
     font-size: 0.85rem;
+    padding: 0 0.75rem 0.75rem 1rem;
+    max-height: 1000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+    opacity: 1;
+}
+
+.tool-call-card.collapsed .tool-details {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+}
+
+.tool-detail-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
 }
 
 .tool-arguments,
@@ -243,18 +317,21 @@ body {
     background: var(--bg-color);
     padding: 0.5rem;
     border-radius: 0.25rem;
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
     font-family: 'Courier New', monospace;
     white-space: pre-wrap;
     word-break: break-all;
+    font-size: 0.8rem;
+    max-height: 300px;
+    overflow-y: auto;
 }
 
 .tool-result.success {
-    color: var(--success-color);
+    border-left: 3px solid var(--success-color);
 }
 
 .tool-result.error {
-    color: var(--error-color);
+    border-left: 3px solid var(--error-color);
 }
 
 /* 问题消息 */

@@ -214,8 +214,16 @@ async def diagnose(request: DiagnoseRequest):
             nlu = NLU(llm_client)
             task = nlu.parse_user_input(request.description, task_id)
         else:
-            # 使用规则解析（从 cli.py 的 parse_user_input 复制）
+            # 使用规则解析
             from .models.task import DiagnosticTask, FaultType, Protocol
+            from .utils.input_validator import extract_network_info
+            
+            # 提取并验证网络信息
+            source, target, port, error = extract_network_info(request.description)
+            
+            # 如果验证失败,抛出异常
+            if error:
+                raise ValueError(error)
 
             if "端口" in request.description or "telnet" in request.description.lower():
                 fault_type = FaultType.PORT_UNREACHABLE
@@ -223,15 +231,6 @@ async def diagnose(request: DiagnoseRequest):
             else:
                 fault_type = FaultType.CONNECTIVITY
                 protocol = Protocol.ICMP
-
-            parts = request.description.replace("到", " ").replace("端口", " ").replace("不通", "").strip().split()
-            source = parts[0] if len(parts) > 0 else "unknown_source"
-            target = parts[1] if len(parts) > 1 else "unknown_target"
-            port = None
-            for part in parts:
-                if part.isdigit():
-                    port = int(part)
-                    break
 
             task = DiagnosticTask(
                 task_id=task_id,
@@ -284,8 +283,15 @@ async def diagnose(request: DiagnoseRequest):
             tool_calls=tool_calls if tool_calls else None
         )
 
+    except ValueError as e:
+        # 输入验证错误，返回友好提示
+        return DiagnoseResponse(
+            task_id=task_id,
+            status="failed",
+            error=f"输入验证失败: {str(e)}。请检查输入格式后重新提交。"
+        )
     except Exception as e:
-        # 错误处理
+        # 其他错误处理
         return DiagnoseResponse(
             task_id=task_id,
             status="failed",
@@ -345,6 +351,14 @@ async def diagnose_stream(request: DiagnoseRequest):
                     else:
                         # 使用规则解析
                         from .models.task import DiagnosticTask, FaultType, Protocol
+                        from .utils.input_validator import extract_network_info
+                        
+                        # 提取并验证网络信息
+                        source, target, port, error = extract_network_info(request.description)
+                        
+                        # 如果验证失败,抛出异常
+                        if error:
+                            raise ValueError(error)
 
                         if "端口" in request.description or "telnet" in request.description.lower():
                             fault_type = FaultType.PORT_UNREACHABLE
@@ -352,15 +366,6 @@ async def diagnose_stream(request: DiagnoseRequest):
                         else:
                             fault_type = FaultType.CONNECTIVITY
                             protocol = Protocol.ICMP
-
-                        parts = request.description.replace("到", " ").replace("端口", " ").replace("不通", "").strip().split()
-                        source = parts[0] if len(parts) > 0 else "unknown_source"
-                        target = parts[1] if len(parts) > 1 else "unknown_target"
-                        port = None
-                        for part in parts:
-                            if part.isdigit():
-                                port = int(part)
-                                break
 
                         task = DiagnosticTask(
                             task_id=task_id,
@@ -468,6 +473,13 @@ async def diagnose_stream(request: DiagnoseRequest):
 
                 except NeedUserInputException:
                     # NeedUserInputException 已经在上面处理，发送完成信号
+                    await event_queue.put({"type": "done"})
+                except ValueError as e:
+                    # 输入验证错误，发送友好提示
+                    await event_queue.put({
+                        "type": "error",
+                        "message": f"输入验证失败: {str(e)}。请检查输入格式后重新提交。"
+                    })
                     await event_queue.put({"type": "done"})
                 except Exception as e:
                     # 发送错误事件
@@ -1093,7 +1105,499 @@ async def get_task_status(task_id: str):
     )
 
 
+# ===== 知识库管理 API =====
+
+from fastapi import UploadFile, File
+
+# 知识库服务初始化标志
+_rag_initialized = False
+_document_processor = None
+_vector_store = None
+_rag_chain = None
+
+
+def _init_rag_services():
+    """延迟初始化RAG服务（避免启动时加载模型）"""
+    global _rag_initialized, _document_processor, _vector_store, _rag_chain
+    if not _rag_initialized:
+        from .rag import DocumentProcessor, get_vector_store, RAGChain
+        _document_processor = DocumentProcessor()
+        _vector_store = get_vector_store()
+        _rag_chain = RAGChain(vector_store=_vector_store)
+        _rag_initialized = True
+        print("[API] RAG服务初始化完成")
+    return _document_processor, _vector_store, _rag_chain
+
+
+@app.post("/api/v1/knowledge/upload")
+async def upload_knowledge(file: UploadFile = File(...)):
+    """
+    上传知识库文档
+
+    ### 请求：
+    - 上传TXT格式文件（multipart/form-data）
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "doc_id": "doc_20260203_abc123",
+        "filename": "network_guide.txt",
+        "chunks": 15,
+        "message": "文档上传成功，已分割为15个知识块"
+    }
+    ```
+    """
+    try:
+        # 验证文件类型
+        if not file.filename.endswith('.txt'):
+            raise HTTPException(
+                status_code=400,
+                detail="仅支持TXT格式文件"
+            )
+        
+        # 初始化RAG服务
+        document_processor, vector_store, _ = _init_rag_services()
+        
+        # 读取文件内容
+        content = await file.read()
+        
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="文件内容为空"
+            )
+        
+        # 处理文档
+        doc_id, chunks, metadatas = document_processor.process_text_file(
+            file_content=content,
+            filename=file.filename
+        )
+        
+        # 添加到向量存储
+        vector_store.add_documents(
+            texts=chunks,
+            metadatas=metadatas,
+            doc_id=doc_id
+        )
+        
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "filename": file.filename,
+            "chunks": len(chunks),
+            "message": f"文档上传成功，已分割为{len(chunks)}个知识块"
+        }
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"上传文档失败: {str(e)}"
+        )
+
+
+@app.get("/api/v1/knowledge/list")
+async def list_knowledge():
+    """
+    获取知识库文档列表
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "documents": [
+            {
+                "doc_id": "doc_20260203_abc123",
+                "filename": "network_guide.txt",
+                "chunk_count": 15,
+                "upload_time": "2026-02-03T20:30:00"
+            }
+        ],
+        "total": 1
+    }
+    ```
+    """
+    try:
+        # 初始化RAG服务
+        _, vector_store, _ = _init_rag_services()
+        
+        # 获取文档列表
+        documents = vector_store.list_documents()
+        
+        return {
+            "status": "success",
+            "documents": documents,
+            "total": len(documents)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取文档列表失败: {str(e)}"
+        )
+
+
+@app.delete("/api/v1/knowledge/{doc_id}")
+async def delete_knowledge(doc_id: str):
+    """
+    删除知识库文档
+
+    ### 路径参数：
+    - doc_id: 文档ID
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "doc_id": "doc_20260203_abc123",
+        "deleted_chunks": 15,
+        "message": "文档已删除"
+    }
+    ```
+    """
+    try:
+        # 初始化RAG服务
+        document_processor, vector_store, _ = _init_rag_services()
+        
+        # 删除向量存储中的文档
+        deleted_count = vector_store.delete_by_doc_id(doc_id)
+        
+        if deleted_count == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"文档不存在: {doc_id}"
+            )
+        
+        # 删除原始文件
+        document_processor.delete_file(doc_id)
+        
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "deleted_chunks": deleted_count,
+            "message": "文档已删除"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除文档失败: {str(e)}"
+        )
+
+
+@app.get("/api/v1/knowledge/stats")
+async def knowledge_stats():
+    """
+    获取知识库统计信息
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "stats": {
+            "total_documents": 5,
+            "total_chunks": 120,
+            "has_knowledge": true
+        }
+    }
+    ```
+    """
+    try:
+        # 初始化RAG服务
+        _, vector_store, rag_chain = _init_rag_services()
+        
+        documents = vector_store.list_documents()
+        stats = vector_store.get_stats()
+        
+        return {
+            "status": "success",
+            "stats": {
+                "total_documents": len(documents),
+                "total_chunks": stats.get("total_chunks", 0),
+                "has_knowledge": rag_chain.has_knowledge()
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取统计信息失败: {str(e)}"
+        )
+
+
+@app.get("/api/v1/knowledge/search")
+async def search_knowledge(query: str, top_k: int = 5):
+    """
+    搜索知识库内容
+
+    ### 查询参数：
+    - query: 搜索关键词（必填）
+    - top_k: 返回结果数量（可选，默认5）
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "query": "证书更新",
+        "results": [
+            {
+                "text": "证书更新服务联系人是张三...",
+                "filename": "contacts.txt",
+                "relevance_score": 0.82,
+                "chunk_index": 0,
+                "doc_id": "doc_20260303_abc123"
+            }
+        ],
+        "total": 1
+    }
+    ```
+    """
+    try:
+        if not query or not query.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="搜索关键词不能为空"
+            )
+
+        if top_k < 1 or top_k > 20:
+            top_k = 5
+
+        # 初始化RAG服务
+        _, _, rag_chain = _init_rag_services()
+
+        # 使用RAG检索链进行语义搜索
+        results = rag_chain.retrieve(query.strip(), top_k=top_k)
+
+        # 格式化搜索结果
+        formatted_results = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            formatted_results.append({
+                "text": result.get("text", ""),
+                "filename": metadata.get("filename", "未知来源"),
+                "relevance_score": round(result.get("relevance_score", 0), 4),
+                "chunk_index": metadata.get("chunk_index", 0),
+                "doc_id": metadata.get("doc_id", "")
+            })
+
+        return {
+            "status": "success",
+            "query": query.strip(),
+            "results": formatted_results,
+            "total": len(formatted_results)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"搜索知识库失败: {str(e)}"
+        )
+
+
+@app.get("/api/v1/knowledge/{doc_id}/content")
+async def get_knowledge_content(doc_id: str):
+    """
+    获取知识库文档内容（用于在线预览）
+
+    ### 路径参数：
+    - doc_id: 文档ID
+
+    ### 响应示例：
+    ```json
+    {
+        "status": "success",
+        "doc_id": "doc_20260203_abc123",
+        "filename": "network_guide.txt",
+        "content": "文档的文本内容...",
+        "size": 1234
+    }
+    ```
+    """
+    try:
+        # 初始化RAG服务
+        document_processor, _, _ = _init_rag_services()
+        
+        # 获取文档内容
+        result = document_processor.get_file_content(doc_id)
+        
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"文档不存在: {doc_id}"
+            )
+        
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "filename": result["filename"],
+            "content": result["content"],
+            "size": result["size"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取文档内容失败: {str(e)}"
+        )
+
+
+# 修改通用聊天请求模型，添加use_rag参数
+class GeneralChatRequestWithRAG(BaseModel):
+    """通用聊天请求（支持RAG）"""
+    message: str = Field(..., description="用户的消息", min_length=1)
+    session_id: Optional[str] = Field(None, description="可选的会话ID，用于继续现有会话")
+    use_rag: bool = Field(default=True, description="是否使用知识库检索增强")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "如何排查端口不通的问题？",
+                "session_id": None,
+                "use_rag": True
+            }
+        }
+
+
+@app.post("/api/v1/chat/general/stream")
+async def general_chat_stream(request: GeneralChatRequestWithRAG):
+    """
+    通用聊天接口（流式，支持RAG）
+
+    ### 请求示例：
+    ```json
+    {
+        "message": "如何排查端口不通的问题？",
+        "use_rag": true
+    }
+    ```
+
+    ### 响应格式：
+    Server-Sent Events (SSE) 流式推送
+    """
+    async def event_generator():
+        try:
+            session_id = request.session_id or generate_task_id()
+            
+            # 发送开始事件
+            yield f"data: {json.dumps({'type': 'start', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            
+            # 初始化LLM客户端
+            llm_client = LLMClient()
+            
+            # 准备系统提示词
+            system_prompt = """你是一个专业的网络故障诊断助手。你的主要职责是帮助用户诊断和解决网络问题。
+
+当用户向你打招呼或询问一般性问题时，你应该：
+1. 友好地回应用户
+2. 简要介绍你的能力（网络故障诊断、根因分析等）
+3. 引导用户描述他们遇到的网络故障（如果适用）
+4. 回答用户关于网络诊断的问题
+
+你可以回答的问题类型包括：
+- 网络诊断相关的概念和方法
+- 常见网络故障的原因
+- 如何使用本系统进行故障诊断
+- 网络工具的使用方法（ping, traceroute, telnet等）
+
+请用简洁、专业但友好的语气回答。如果用户的问题与网络诊断无关，礼貌地说明你的专长领域。"""
+            
+            retrieved_docs = []
+            
+            # 如果启用RAG，检索相关知识
+            if request.use_rag:
+                try:
+                    _, _, rag_chain = _init_rag_services()
+                    if rag_chain.has_knowledge():
+                        # 发送检索开始事件
+                        yield f"data: {json.dumps({'type': 'rag_start', 'message': '正在检索知识库...'}, ensure_ascii=False)}\n\n"
+                        
+                        # 构建增强Prompt
+                        _, enhanced_system_prompt, retrieved_docs = rag_chain.build_enhanced_prompt(request.message)
+                        system_prompt = enhanced_system_prompt
+                        
+                        # 发送检索结果事件
+                        if retrieved_docs:
+                            yield f"data: {json.dumps({'type': 'rag_result', 'count': len(retrieved_docs), 'sources': [d.get('metadata', {}).get('filename', '未知') for d in retrieved_docs]}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'rag_result', 'count': 0, 'message': '未找到相关知识'}, ensure_ascii=False)}\n\n"
+                except Exception as e:
+                    print(f"[API] RAG检索失败: {e}")
+                    yield f"data: {json.dumps({'type': 'rag_error', 'message': f'知识库检索失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+            
+            # 获取或创建会话
+            session = await session_manager.get_session(session_id) if request.session_id else None
+            
+            if session:
+                # 继续现有会话
+                await session_manager.add_message(session_id, "user", request.message)
+                messages = session.messages
+                response = llm_client.chat(messages=messages, system_prompt=system_prompt)
+            else:
+                # 新会话
+                response = llm_client.invoke(prompt=request.message, system_prompt=system_prompt)
+                
+                # 创建会话
+                from .models.task import DiagnosticTask, FaultType, Protocol
+                task = DiagnosticTask(
+                    task_id=session_id,
+                    user_input=request.message,
+                    source="general_chat",
+                    target="general_chat",
+                    protocol=Protocol.ICMP,
+                    fault_type=FaultType.CONNECTIVITY,
+                    port=None
+                )
+                agent = LLMAgent(llm_client=llm_client, verbose=False)
+                session_manager.create_session(
+                    session_id=session_id,
+                    task=task,
+                    llm_client=llm_client,
+                    agent=agent
+                )
+                await session_manager.add_message(session_id, "user", request.message)
+            
+            # 流式发送响应（模拟打字效果）
+            chunk_size = 10  # 每次发送的字符数
+            for i in range(0, len(response), chunk_size):
+                chunk = response[i:i+chunk_size]
+                yield f"data: {json.dumps({'type': 'content', 'text': chunk}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.02)  # 模拟打字延迟
+            
+            # 保存助手响应
+            await session_manager.add_message(session_id, "assistant", response)
+            session_manager.update_session(session_id, status="completed")
+            
+            # 发送完成事件
+            yield f"data: {json.dumps({'type': 'complete', 'session_id': session_id, 'rag_used': request.use_rag and len(retrieved_docs) > 0}, ensure_ascii=False)}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

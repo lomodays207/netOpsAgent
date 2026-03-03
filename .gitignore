@@ -155,3 +155,23 @@ runtime/db/*
 # Temporary files
 *.tmp
 *.bak
+
+# Debug output files
+debug_output.txt
+rag_debug_output.txt
+rag_scores.txt
+investigate_results.txt
+
+# Debug/investigation scripts (root level)
+debug_rag_retrieval.py
+investigate_knowledge.py
+reproduce_rag.py
+
+# Runtime data
+runtime/sessions.db
+runtime/knowledge_base/
+
+# Claude/Gemini config
+.claude/
+.gemini/
+.agent/

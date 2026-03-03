@@ -1,0 +1,63 @@
+网络故障排查知识库
+
+## 端口不通问题排查步骤
+
+### 1. 基本连通性测试
+使用ping命令测试网络层连通性:
+- ping命令可以测试ICMP协议是否畅通
+- 如果ping不通,可能是网络层问题或防火墙阻止ICMP
+- 如果ping通但端口不通,说明是传输层或应用层问题
+
+### 2. 端口连通性测试
+使用telnet或nc命令测试端口:
+- telnet命令: telnet <目标IP> <端口>
+- 如果返回"Connection refused",说明端口未监听
+- 如果返回"Connection timeout",可能是防火墙或路由问题
+
+### 3. 检查服务监听状态
+在目标服务器上使用ss或netstat命令:
+- ss -tunlp | grep <端口号>
+- 检查服务是否在指定端口上监听
+- 确认监听地址是0.0.0.0还是127.0.0.1
+
+### 4. 防火墙规则检查
+检查iptables或firewalld规则:
+- iptables -L -n -v
+- 查看INPUT链是否有DROP或REJECT规则
+- 确认端口是否在允许列表中
+
+### 5. 路由跟踪
+使用traceroute命令追踪路径:
+- traceroute <目标IP>
+- 查看数据包在哪个节点丢失
+- 确认路由路径是否正确
+
+## 常见故障原因
+
+### 服务未启动
+- 检查服务状态: systemctl status <服务名>
+- 启动服务: systemctl start <服务名>
+- 设置开机自启: systemctl enable <服务名>
+
+### 防火墙阻止
+- 临时关闭防火墙测试: systemctl stop firewalld
+- 添加防火墙规则: firewall-cmd --add-port=<端口>/tcp --permanent
+- 重载防火墙: firewall-cmd --reload
+
+### 端口被占用
+- 查找占用端口的进程: lsof -i:<端口>
+- 终止进程: kill -9 <PID>
+- 修改服务配置使用其他端口
+
+### 网络配置错误
+- 检查IP地址配置: ip addr show
+- 检查路由表: ip route show
+- 检查DNS配置: cat /etc/resolv.conf
+
+## 最佳实践
+
+1. 从下往上排查: 先检查网络层,再检查传输层,最后检查应用层
+2. 使用工具验证: 不要仅凭经验判断,使用工具确认
+3. 保留证据: 记录每一步的测试结果
+4. 逐步缩小范围: 通过排除法定位问题
+5. 注意安全: 修改防火墙规则时要谨慎,避免引入安全风险

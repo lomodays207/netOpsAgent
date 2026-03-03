@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - netOpsAgent</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        /* ===== CSS Reset & Variables ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --sidebar-width: 240px;
+            --header-height: 64px;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-light: rgba(99, 102, 241, 0.08);
+            --bg: #f8f9fb;
+            --sidebar-bg: #ffffff;
+            --card-bg: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --transition: 0.2s ease;
+
+            /* 分类颜色 */
+            --cat-engineering: #6366f1;
+            --cat-product: #f97316;
+            --cat-design: #ec4899;
+            --cat-hr: #22c55e;
+            --cat-marketing: #eab308;
+            --cat-ops: #06b6d4;
+            --cat-security: #ef4444;
+            --cat-default: #64748b;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ===== Layout ===== */
+        .app-layout {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 20px 24px;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .sidebar-logo .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .sidebar-logo .logo-text {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .sidebar-section-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 0 20px;
+            margin-bottom: 6px;
+        }
+
+        .sidebar-nav {
+            list-style: none;
+            padding: 0 12px;
+            margin-bottom: 24px;
+        }
+
+        .sidebar-nav-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-secondary);
+            transition: all var(--transition);
+            user-select: none;
+        }
+
+        .sidebar-nav-item:hover {
+            background: var(--bg);
+            color: var(--text-primary);
+        }
+
+        .sidebar-nav-item.active {
+            background: var(--primary-light);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .sidebar-nav-item .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-nav-item .nav-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-nav-item .nav-count {
+            font-size: 12px;
+            color: var(--text-muted);
+            min-width: 20px;
+            text-align: right;
+        }
+
+        .sidebar-nav-item.active .nav-count {
+            color: var(--primary);
+        }
+
+        .category-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* 分类编辑按钮 */
+        .cat-edit-btn {
+            display: none;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            opacity: 0.5;
+            transition: opacity var(--transition);
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .sidebar-nav-item:hover .cat-edit-btn {
+            display: inline-flex;
+        }
+
+        .cat-edit-btn:hover {
+            opacity: 1;
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        /* 分类名 inline 编辑输入框 */
+        .cat-edit-input {
+            width: 90px;
+            height: 24px;
+            padding: 0 6px;
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+            background: #fff;
+            color: var(--text-primary);
+        }
+
+        /* Sidebar footer */
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-light);
+        }
+
+        .sidebar-footer a {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color var(--transition);
+        }
+
+        .sidebar-footer a:hover {
+            color: var(--primary);
+        }
+
+        /* ===== Main Content ===== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        /* ===== Top Bar ===== */
+        .top-bar {
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            background: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .search-box {
+            position: relative;
+            width: 440px;
+            max-width: 50%;
+        }
+
+        .search-box input {
+            width: 100%;
+            height: 40px;
+            padding: 0 16px 0 40px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 14px;
+            font-family: inherit;
+            background: var(--bg);
+            color: var(--text-primary);
+            outline: none;
+            transition: all var(--transition);
+        }
+
+        .search-box input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            background: #fff;
+        }
+
+        .search-box input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-box .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 14px;
+            pointer-events: none;
+        }
+
+        .upload-trigger-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 20px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .upload-trigger-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .upload-trigger-btn .btn-icon {
+            font-size: 16px;
+        }
+
+        /* ===== Content Area ===== */
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 28px 32px 32px;
+        }
+
+        .content-header {
+            margin-bottom: 24px;
+        }
+
+        .content-header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .content-header .result-count {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* ===== Card Grid ===== */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        @media (max-width: 1200px) {
+            .card-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 800px) {
+            .card-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ===== Document Card ===== */
+        .doc-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: all var(--transition);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .doc-card:hover {
+            border-color: #cbd5e1;
+            box-shadow: var(--shadow-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .doc-card .card-category {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 4px;
+            width: fit-content;
+        }
+
+        .doc-card .card-category .cat-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .doc-card .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .doc-card .card-summary {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            flex: 1;
+        }
+
+        .doc-card .card-footer {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+            padding-top: 8px;
+            border-top: 1px solid var(--border-light);
+        }
+
+        .doc-card .card-footer .footer-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Card action buttons (visible on hover) */
+        .doc-card .card-actions {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity var(--transition);
+        }
+
+        .doc-card:hover .card-actions {
+            opacity: 1;
+        }
+
+        .card-action-btn {
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all var(--transition);
+            background: var(--bg);
+            color: var(--text-secondary);
+        }
+
+        .card-action-btn:hover {
+            background: #e2e8f0;
+            color: var(--text-primary);
+        }
+
+        .card-action-btn.delete-action:hover {
+            background: #fee2e2;
+            color: #ef4444;
+        }
+
+        /* ===== Empty State ===== */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
+        }
+
+        .empty-state .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .empty-state p:first-of-type {
+            font-size: 16px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ===== Search Results Mode ===== */
+        .search-result-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--primary-light);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+        }
+
+        .score-bar-mini {
+            width: 48px;
+            height: 3px;
+            background: #e2e8f0;
+            border-radius: 2px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+
+        .score-bar-mini-fill {
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .clear-search-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 12px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            background: #fff;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 12px;
+            transition: all var(--transition);
+        }
+
+        .clear-search-btn:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        /* ===== Preview Modal ===== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-box {
+            background: #fff;
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 720px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            animation: scaleIn 0.2s ease;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .modal-title {
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-title .file-size {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 50%;
+            background: var(--bg);
+            color: var(--text-secondary);
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+        }
+
+        .modal-close:hover {
+            background: #fee2e2;
+            color: #ef4444;
+        }
+
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .preview-content {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-primary);
+        }
+
+        .preview-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .preview-loading .spinner {
+            margin: 0 auto 12px;
+        }
+
+        /* Upload Modal */
+        .upload-modal-body {
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .upload-drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius-lg);
+            padding: 40px 20px;
+            transition: all var(--transition);
+            cursor: pointer;
+        }
+
+        .upload-drop-zone:hover,
+        .upload-drop-zone.drag-over {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .upload-drop-zone .drop-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            opacity: 0.6;
+        }
+
+        .upload-drop-zone .drop-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .upload-drop-zone .drop-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .upload-file-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .upload-file-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .upload-file-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ===== Toast ===== */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-size: 14px;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+            max-width: 380px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .toast.success {
+            background: #16a34a;
+        }
+
+        .toast.error {
+            background: #dc2626;
+        }
+
+        .toast.info {
+            background: var(--primary);
+        }
+
+        /* ===== Loading ===== */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            backdrop-filter: blur(2px);
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* ===== Animations ===== */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Scrollbar styling */
+        .content-area::-webkit-scrollbar,
+        .modal-body::-webkit-scrollbar,
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .content-area::-webkit-scrollbar-track,
+        .modal-body::-webkit-scrollbar-track,
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .content-area::-webkit-scrollbar-thumb,
+        .modal-body::-webkit-scrollbar-thumb,
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .content-area::-webkit-scrollbar-thumb:hover,
+        .modal-body::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* ===== Pagination ===== */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 4px;
+            margin-top: 24px;
+            grid-column: 1 / -1;
+        }
+
+        .page-btn {
+            min-width: 34px;
+            height: 34px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: #fff;
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .page-btn:hover:not(.disabled):not(.active) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .page-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .page-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .page-ellipsis {
+            color: var(--text-muted);
+            padding: 0 4px;
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+
+            .top-bar {
+                padding: 0 16px;
+            }
+
+            .content-area {
+                padding: 20px 16px;
+            }
+
+            .search-box {
+                max-width: 60%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- ===== Sidebar ===== -->
+        <aside class="sidebar">
+            <a href="/" class="sidebar-logo">
+                <div class="logo-icon">📚</div>
+                <span class="logo-text">知识库</span>
+            </a>
+
+            <!-- 文档库 -->
+            <div class="sidebar-section-label">文档库</div>
+            <ul class="sidebar-nav" id="nav-library">
+                <li class="sidebar-nav-item active" data-filter="all" onclick="filterByCategory('all', this)">
+                    <span class="nav-left">
+                        <span class="nav-icon">📁</span>
+                        <span>全部文档</span>
+                    </span>
+                    <span class="nav-count" id="nav-count-all">0</span>
+                </li>
+            </ul>
+
+            <!-- 分类 -->
+            <div class="sidebar-section-label">分类</div>
+            <ul class="sidebar-nav" id="nav-categories">
+                <!-- 由 JS 动态生成 -->
+            </ul>
+
+            <div class="sidebar-footer">
+                <a href="/">← 返回对话界面</a>
+            </div>
+        </aside>
+
+        <!-- ===== Main ===== -->
+        <div class="main-content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" placeholder="搜索知识库内容..." />
+                </div>
+                <button class="upload-trigger-btn" id="upload-trigger-btn" onclick="openUploadModal()">
+                    <span class="btn-icon">⬆</span> 上传
+                </button>
+            </header>
+
+            <!-- Content -->
+            <div class="content-area">
+                <div class="content-header">
+                    <h1 id="content-title">All Knowledge</h1>
+                    <span class="result-count" id="result-count">Showing 0 results</span>
+                    <button class="clear-search-btn hidden" id="clear-search-btn" onclick="clearSearchResults()">✕
+                        清除搜索</button>
+                </div>
+
+                <div class="card-grid" id="card-grid">
+                    <!-- 文档卡片由 JS 动态生成 -->
+                </div>
+                <div class="empty-state hidden" id="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <p>暂无上传的文档</p>
+                    <p>上传您的知识文档，开始使用 RAG 增强功能</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Upload Modal ===== -->
+    <div class="modal-overlay hidden" id="upload-modal-overlay" onclick="closeUploadModal(event)">
+        <div class="modal-box" onclick="event.stopPropagation()" style="max-width:520px;">
+            <div class="modal-header">
+                <div class="modal-title">📄 上传知识文档</div>
+                <button class="modal-close" onclick="closeUploadModal()" title="关闭">✕</button>
+            </div>
+            <div class="upload-modal-body">
+                <div class="upload-drop-zone" id="upload-drop-zone">
+                    <div class="drop-icon">📄</div>
+                    <p class="drop-text">拖拽 TXT 文件到此处，或点击下方按钮上传</p>
+                    <p class="drop-hint">支持格式：TXT 文本文件</p>
+                    <input type="file" id="file-input" accept=".txt" style="display:none;">
+                    <button class="upload-file-btn" id="upload-file-btn"
+                        onclick="document.getElementById('file-input').click()">选择文件上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Preview Modal ===== -->
+    <div class="modal-overlay hidden" id="preview-modal-overlay" onclick="closePreviewModal(event)">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>📄</span>
+                    <span id="preview-filename">文档预览</span>
+                    <span class="file-size" id="preview-file-size"></span>
+                </div>
+                <button class="modal-close" onclick="closePreviewModal()" title="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="preview-loading hidden" id="preview-loading">
+                    <div class="spinner"></div>
+                    <p>正在加载文档内容...</p>
+                </div>
+                <pre class="preview-content" id="preview-content"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Loading Overlay ===== -->
+    <div class="loading-overlay hidden" id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="/static/knowledge.js"></script>
+</body>
+
+</html>

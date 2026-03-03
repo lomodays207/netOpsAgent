@@ -53,3 +53,7 @@ netops = "src.cli:main"
 ## 启动、关闭脚本都放 scripts 目录里面
 ## 所有的文档，需求分析、设计文档等，都放 docs 目录里面
 ## 任何涉及外部工具调用，都使用 Mock 数据，不要调用真实的工具，返回的格式要和真实工具返回的格式一致
+
+# 本地模型位置：
+BAAI/bge-small-zh-v1.5 模型已成功下载到:
+C:\Users\grant\.cache\huggingface\hub\models--BAAI--bge-small-zh-v1.5\snapshots\7999e1d3359715c523056ef9478215996d62a620

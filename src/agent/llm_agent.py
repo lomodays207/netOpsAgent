@@ -269,7 +269,14 @@ class LLMAgent:
                         })
 
                     try:
+                        # 记录开始时间
+                        import time
+                        start_time = time.time()
+
                         result = await self._execute_tool(tool_call, task)
+
+                        # 计算执行时间
+                        execution_time = time.time() - start_time
 
                         # 执行后再次检查停止信号
                         if stop_event and stop_event.is_set():
@@ -281,14 +288,16 @@ class LLMAgent:
                                 "type": "tool_result",
                                 "step": step_count,
                                 "tool": tool_call["name"],
-                                "result": result
+                                "result": result,
+                                "execution_time": round(execution_time, 2)  # 保留2位小数
                             })
 
                         context.append({
                             "step": step_count,
                             "tool": tool_call["name"],
                             "arguments": tool_call["arguments"],
-                            "result": result
+                            "result": result,
+                            "execution_time": execution_time
                         })
                         self.current_context = context  # 更新当前上下文
 
@@ -304,7 +313,8 @@ class LLMAgent:
                                     "tool_call": {
                                         "name": tool_call["name"],
                                         "arguments": tool_call["arguments"],
-                                        "result": result
+                                        "result": result,
+                                        "execution_time": round(execution_time, 2)
                                     }
                                 }
                             )
@@ -454,7 +464,14 @@ class LLMAgent:
                         })
 
                     try:
+                        # 记录开始时间
+                        import time
+                        start_time = time.time()
+
                         result = await self._execute_tool(tool_call, task)
+
+                        # 计算执行时间
+                        execution_time = time.time() - start_time
 
                         # 执行后再次检查停止信号
                         if stop_event and stop_event.is_set():
@@ -466,7 +483,8 @@ class LLMAgent:
                                 "type": "tool_result",
                                 "step": step_count,
                                 "tool": tool_call["name"],
-                                "result": result
+                                "result": result,
+                                "execution_time": round(execution_time, 2)  # 保留2位小数
                             })
 
                         context.append({

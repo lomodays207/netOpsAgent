@@ -237,7 +237,7 @@ def _print_step_metadata(metadata: dict):
 
 def parse_user_input(user_input: str) -> DiagnosticTask:
     """
-    解析用户输入（Phase 1简化版：基于规则的解析）
+    解析用户输入(Phase 1简化版:基于规则的解析)
 
     Args:
         user_input: 用户输入字符串
@@ -250,6 +250,16 @@ def parse_user_input(user_input: str) -> DiagnosticTask:
         "server1到server2 ping不通" → connectivity
     """
     task_id = generate_task_id()
+    
+    # 先进行输入验证
+    from .utils.input_validator import extract_network_info
+    
+    # 提取并验证网络信息
+    source, target, port, error = extract_network_info(user_input)
+    
+    # 如果验证失败,抛出异常让用户重新输入
+    if error:
+        raise ValueError(error)
 
     # 简单的规则解析
     if "端口" in user_input or "telnet" in user_input.lower():
@@ -261,19 +271,6 @@ def parse_user_input(user_input: str) -> DiagnosticTask:
     else:
         fault_type = FaultType.PORT_UNREACHABLE
         protocol = Protocol.TCP
-
-    # 提取主机名（简化版：假设格式为"源主机到目标主机"）
-    parts = user_input.replace("到", " ").replace("端口", " ").replace("不通", "").strip().split()
-
-    source = parts[0] if len(parts) > 0 else "unknown_source"
-    target = parts[1] if len(parts) > 1 else "unknown_target"
-
-    # 提取端口号
-    port = None
-    for part in parts:
-        if part.isdigit():
-            port = int(part)
-            break
 
     return DiagnosticTask(
         task_id=task_id,

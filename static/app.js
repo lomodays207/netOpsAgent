@@ -10,6 +10,7 @@ const sendBtn = document.getElementById('send-btn');
 const stopBtn = document.getElementById('stop-btn');
 const messagesContainer = document.getElementById('messages-container');
 const useLLMCheckbox = document.getElementById('use-llm');
+const useRAGCheckbox = document.getElementById('use-rag');
 const verboseCheckbox = document.getElementById('verbose');
 
 // 初始化
@@ -266,18 +267,25 @@ async function handleSubmit(e) {
     showTypingIndicator();
 
     try {
-        // 改进的诊断请求判断逻辑
-        // 使用更精确的模式匹配，避免误判
+        // 改进的意图识别逻辑：区分知识查询和诊断请求
+
+        // 1. 检测是否包含IP地址
         const hasIP = /\d+\.\d+\.\d+\.\d+/.test(message);
-        // 只要包含明确的诊断关键词（不仅是IP），也认为是诊断请求
-        // 移除了"问题"、"故障"等通用词，保留更具体的网络术语
-        // 移除了"问题"、"故障"等通用词，保留更具体的网络排查触发词
-        // 关键：将 "端口" 限制为与某些操作或状态词连用，避免解释性问题误触发
-        const hasDiagnosticKeywords = /(不通|无法访问|连接失败|排查|诊断|故障)/.test(message);
-        // 如果包含 ping/telnet/traceroute 且伴随特定意向，或者直接包含 IP 地址（hasIP）
+
+        // 2. 检测是否为疑问句（知识查询的特征）
+        const isQuestion = /(怎么|如何|什么是|为什么|哪些|是否|能否|可以|请问|请教|\?|？)/.test(message);
+
+        // 3. 检测诊断关键词（缩小范围，移除"排查"、"诊断"、"故障"等通用词）
+        const hasDiagnosticKeywords = /(不通|无法访问|连接失败|连接超时|拒绝连接)/.test(message);
+
+        // 4. 检测是否包含工具命令 + 具体参数
         const hasSpecificToolCmd = /(ping|traceroute|telnet)\s+\d+/.test(message.toLowerCase());
 
-        const looksLikeNewDiagnosis = hasIP || hasDiagnosticKeywords || hasSpecificToolCmd;
+        // 5. 判断是否为诊断请求：
+        //    - 有IP地址，或
+        //    - (有故障关键词 且 不是疑问句)，或
+        //    - 有工具命令
+        const looksLikeNewDiagnosis = hasIP || (hasDiagnosticKeywords && !isQuestion) || hasSpecificToolCmd;
 
         // 获取当前会话类型
         const sessionType = localStorage.getItem('sessionType');
@@ -425,11 +433,15 @@ async function continueChat(answer) {
     await processStream(response);
 }
 
-// 通用聊天（非诊断模式）
+// 通用聊天（非诊断模式，支持RAG）
 async function generalChat(message) {
-    console.log('💬 通用聊天模式', currentSessionId ? `(继续会话: ${currentSessionId})` : '(新会话)');
+    const useRAG = useRAGCheckbox ? useRAGCheckbox.checked : true;
+    console.log('💬 通用聊天模式', currentSessionId ? `(继续会话: ${currentSessionId})` : '(新会话)', `RAG: ${useRAG}`);
 
-    const requestBody = { message };
+    const requestBody = {
+        message,
+        use_rag: useRAG
+    };
 
     // 如果有当前会话ID，包含在请求中以继续会话
     if (currentSessionId) {
@@ -437,8 +449,10 @@ async function generalChat(message) {
     }
 
     isWaitingForResponse = true;
+
     try {
-        const response = await fetch('/api/v1/chat/general', {
+        // 使用流式接口
+        const response = await fetch('/api/v1/chat/general/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
@@ -448,21 +462,126 @@ async function generalChat(message) {
             throw new Error(`HTTP ${response.status}`);
         }
 
-        const data = await response.json();
-
-        // 更新会话ID（如果是新会话）
-        if (!currentSessionId && data.session_id) {
-            currentSessionId = data.session_id;
-            saveSession();
-            localStorage.setItem('sessionType', 'general'); // 明确标记为通用聊天
-            console.log('新会话ID:', currentSessionId, '类型: general');
-        }
-
-
-        // 使用打字机效果显示响应
-        await addAssistantMessageWithTyping(data.response);
+        // 处理流式响应
+        await processGeneralChatStream(response);
     } finally {
         isWaitingForResponse = false;
+        hideTypingIndicator();
+        setInputEnabled(true);
+        toggleStopButton(false);
+    }
+}
+
+// 处理通用聊天的流式响应
+async function processGeneralChatStream(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullResponse = '';
+    let messageEl = null;
+    let textEl = null;
+
+    while (true) {
+        // 检查是否已被外部标记为停止
+        if (!isWaitingForResponse) {
+            console.log('🛑 流读取循环被中断');
+            try {
+                await reader.cancel();
+            } catch (e) { }
+            break;
+        }
+
+        const { done, value } = await reader.read();
+
+        if (done) {
+            console.log('✅ 流结束');
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const event = JSON.parse(line.substring(6));
+
+                    switch (event.type) {
+                        case 'start':
+                            // 更新会话ID
+                            if (event.session_id) {
+                                currentSessionId = event.session_id;
+                                saveSession();
+                                localStorage.setItem('sessionType', 'general');
+                                console.log('新会话ID:', currentSessionId);
+                            }
+                            break;
+
+                        case 'rag_start':
+                            // 显示RAG检索开始
+                            addSystemMessage('🔍 ' + (event.message || '正在检索知识库...'));
+                            break;
+
+                        case 'rag_result':
+                            // 显示RAG检索结果
+                            if (event.count > 0) {
+                                const sources = event.sources ? event.sources.join(', ') : '';
+                                addSystemMessage(`📚 找到 ${event.count} 条相关知识 (来源: ${sources})`);
+                            } else {
+                                addSystemMessage('📭 知识库中未找到相关内容');
+                            }
+                            break;
+
+                        case 'rag_error':
+                            addSystemMessage('⚠️ ' + (event.message || '知识库检索失败'));
+                            break;
+
+                        case 'content':
+                            // 累积响应内容
+                            if (!messageEl) {
+                                // 创建消息元素
+                                messageEl = document.createElement('div');
+                                messageEl.className = 'message assistant-message';
+                                messageEl.innerHTML = `
+                                    <div class="message-avatar">🤖</div>
+                                    <div class="message-content">
+                                        <div class="message-text"></div>
+                                    </div>
+                                `;
+                                messagesContainer.appendChild(messageEl);
+                                textEl = messageEl.querySelector('.message-text');
+                                hideTypingIndicator(); // 隐藏加载指示器
+                            }
+
+                            fullResponse += event.text;
+                            // 使用 marked 解析 Markdown, 但只在每5次更新或流结束时解析，以提高性能（可选优化）
+                            // 这里为了实时性，每次都解析，注意 XSS 风险（marked 默认不开启 sanitize）
+                            // 实际项目中应配置 DOMPurify
+                            textEl.innerHTML = marked.parse(fullResponse);
+                            scrollToBottom();
+                            break;
+
+                        case 'complete':
+                            // 保存完整响应
+                            if (fullResponse) {
+                                saveMessage('assistant', fullResponse);
+                            }
+                            if (event.rag_used) {
+                                console.log('✨ RAG增强已应用');
+                            }
+                            break;
+
+                        case 'error':
+                            addAssistantMessage(`❌ 错误：${event.message}`);
+                            break;
+                    }
+                } catch (e) {
+                    console.error('解析事件失败:', e, line);
+                }
+            }
+        }
     }
 }
 
@@ -586,7 +705,11 @@ function handleToolStartEvent(event) {
 
 // 处理工具调用结果事件
 function handleToolResultEvent(event) {
-    updateToolCallResult(event.step, event.tool, event.result);
+    console.log('🔧 工具执行结果:', event);
+    // 优先使用 result 中的 execution_time，如果没有则使用事件级别的
+    const executionTime = event.result?.execution_time ?? event.execution_time;
+    console.log('⏱️ 执行时间:', executionTime);
+    updateToolCallResult(event.step, event.tool, event.result, executionTime);
 }
 
 // 处理询问用户事件
@@ -651,7 +774,7 @@ function addAssistantMessage(text, shouldSave = true) {
     messageEl.innerHTML = `
         <div class="message-avatar">🤖</div>
         <div class="message-content">
-            <div class="message-text">${escapeHtml(text)}</div>
+            <div class="message-text">${marked.parse(text)}</div>
         </div>
     `;
     messagesContainer.appendChild(messageEl);
@@ -688,7 +811,7 @@ async function addAssistantMessageWithTyping(text, shouldSave = true) {
         if (!isWaitingForResponse) break;
 
         currentText += chars[i];
-        textEl.textContent = currentText;
+        textEl.innerHTML = marked.parse(currentText);
         scrollToBottom();
 
         // 控制打字速度
@@ -764,13 +887,34 @@ function createToolCallCard(step, toolName, args) {
 
     const toolCard = card.querySelector('.tool-call-card');
     toolCard.id = `tool-${step}`;
+    toolCard.classList.add('status-running');
 
+    // 设置工具名称
     card.querySelector('.tool-name').textContent = formatToolName(toolName);
-    card.querySelector('.tool-status').textContent = '执行中...';
-    card.querySelector('.tool-status').className = 'tool-status running';
 
+    // 设置状态图标（运行中）
+    const statusIcon = card.querySelector('.tool-status-icon');
+    statusIcon.textContent = '⏳';
+    statusIcon.className = 'tool-status-icon running';
+
+    // 执行时间初始为空
+    card.querySelector('.tool-time').textContent = '';
+
+    // 设置参数
     const argsText = JSON.stringify(args, null, 2);
-    card.querySelector('.tool-arguments').textContent = `参数：\n${argsText}`;
+    card.querySelector('.tool-arguments').textContent = argsText;
+
+    // 结果初始为空
+    card.querySelector('.tool-result').textContent = '等待执行结果...';
+
+    // 添加点击事件处理折叠/展开
+    const header = card.querySelector('.tool-header');
+    header.addEventListener('click', () => {
+        const actualCard = document.getElementById(`tool-${step}`);
+        if (actualCard) {
+            actualCard.classList.toggle('collapsed');
+        }
+    });
 
     return card;
 }
@@ -783,20 +927,37 @@ function createToolCallCardFromHistory(toolCall) {
     const card = template.content.cloneNode(true);
     const result = toolCall.result || {};
 
-    card.querySelector('.tool-name').textContent = formatToolName(toolCall.name);
+    const toolCard = card.querySelector('.tool-call-card');
+    const toolNameEl = card.querySelector('.tool-name');
+    const statusIcon = card.querySelector('.tool-status-icon');
+    const timeEl = card.querySelector('.tool-time');
 
-    const statusEl = card.querySelector('.tool-status');
-    if (result.success) {
-        statusEl.textContent = '完成';
-        statusEl.className = 'tool-status success';
-    } else {
-        statusEl.textContent = '失败';
-        statusEl.className = 'tool-status error';
+    // 设置工具名称
+    toolNameEl.textContent = formatToolName(toolCall.name);
+
+    // 设置执行时间
+    if (toolCall.execution_time !== undefined && toolCall.execution_time !== null) {
+        timeEl.textContent = `${toolCall.execution_time}ms`;
     }
 
-    const argsText = JSON.stringify(toolCall.arguments, null, 2);
-    card.querySelector('.tool-arguments').textContent = `参数：\n${argsText}`;
+    // 设置状态和图标
+    if (result.success) {
+        toolCard.classList.add('status-success');
+        toolCard.classList.remove('collapsed'); // 历史记录默认展开，用户可以选择折叠
+        statusIcon.textContent = '✓';
+        statusIcon.className = 'tool-status-icon success';
+    } else {
+        toolCard.classList.add('status-error');
+        toolCard.classList.remove('collapsed'); // 历史记录默认展开
+        statusIcon.textContent = '✗';
+        statusIcon.className = 'tool-status-icon error';
+    }
 
+    // 设置参数
+    const argsText = JSON.stringify(toolCall.arguments, null, 2);
+    card.querySelector('.tool-arguments').textContent = argsText;
+
+    // 设置结果
     const resultEl = card.querySelector('.tool-result');
     let output = '';
 
@@ -808,22 +969,51 @@ function createToolCallCardFromHistory(toolCall) {
     resultEl.textContent = output;
     resultEl.className = `tool-result ${result.success ? 'success' : 'error'}`;
 
+    // 添加点击事件处理折叠/展开
+    const header = card.querySelector('.tool-header');
+    // 生成唯一ID（使用时间戳和随机数）
+    const uniqueId = `tool-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    toolCard.id = uniqueId;
+
+    header.addEventListener('click', () => {
+        const actualCard = document.getElementById(uniqueId);
+        if (actualCard) {
+            actualCard.classList.toggle('collapsed');
+        }
+    });
+
     return card;
 }
 
-function updateToolCallResult(step, toolName, result) {
+function updateToolCallResult(step, toolName, result, executionTime) {
+    console.log('📝 更新工具卡片 - step:', step, 'executionTime:', executionTime);
+
     const toolCard = document.getElementById(`tool-${step}`);
     if (!toolCard) {
         console.warn('找不到工具卡片:', step);
         return;
     }
 
-    const statusEl = toolCard.querySelector('.tool-status');
+    const statusIcon = toolCard.querySelector('.tool-status-icon');
     const resultEl = toolCard.querySelector('.tool-result');
+    const timeEl = toolCard.querySelector('.tool-time');
 
+    // 更新执行时间
+    if (executionTime !== undefined && executionTime !== null) {
+        timeEl.textContent = `${executionTime}ms`;
+        console.log('✅ 已更新执行时间:', timeEl.textContent);
+    } else {
+        console.warn('⚠️ 执行时间为空:', executionTime);
+    }
+
+    // 根据结果更新状态
     if (result.success) {
-        statusEl.textContent = '完成';
-        statusEl.className = 'tool-status success';
+        // 成功状态：绿色
+        toolCard.classList.remove('status-running', 'status-error');
+        toolCard.classList.add('status-success');
+
+        statusIcon.textContent = '✓';
+        statusIcon.className = 'tool-status-icon success';
 
         let output = '';
         if (result.stdout) output += `标准输出：\n${result.stdout}\n`;
@@ -833,8 +1023,12 @@ function updateToolCallResult(step, toolName, result) {
         resultEl.textContent = output;
         resultEl.className = 'tool-result success';
     } else {
-        statusEl.textContent = '失败';
-        statusEl.className = 'tool-status error';
+        // 失败状态：红色
+        toolCard.classList.remove('status-running', 'status-success');
+        toolCard.classList.add('status-error');
+
+        statusIcon.textContent = '✗';
+        statusIcon.className = 'tool-status-icon error';
 
         let errorOutput = '';
         if (result.stderr) errorOutput += `错误输出：\n${result.stderr}\n`;
@@ -860,14 +1054,14 @@ function createFinalReport(report) {
     const template = document.getElementById('report-template');
     const reportEl = template.content.cloneNode(true);
 
-    reportEl.querySelector('.root-cause').textContent = report.root_cause;
+    reportEl.querySelector('.root-cause').innerHTML = marked.parse(report.root_cause);
     reportEl.querySelector('.confidence').textContent = `${report.confidence.toFixed(1)}%`;
 
     const suggestionsUl = reportEl.querySelector('.suggestions');
     if (report.suggestions && report.suggestions.length > 0) {
         report.suggestions.forEach(suggestion => {
             const li = document.createElement('li');
-            li.textContent = suggestion;
+            li.innerHTML = marked.parseInline(suggestion); // 使用 parseInline 避免包裹 <p>
             suggestionsUl.appendChild(li);
         });
     } else {

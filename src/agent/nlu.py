@@ -137,13 +137,27 @@ class NLU:
 
             # 验证提取的信息
             self._validate_extracted_info(extracted_info)
+            
+            # 额外验证IP地址格式
+            from ..utils.input_validator import is_valid_ip
+            
+            source = extracted_info["source"]
+            target = extracted_info["target"]
+            
+            # 验证源IP格式
+            if not is_valid_ip(source):
+                raise ValueError(f"源IP地址格式不正确: {source}。正确格式应为: x.x.x.x (如: 192.168.1.1)")
+            
+            # 验证目标IP格式
+            if not is_valid_ip(target):
+                raise ValueError(f"目标IP地址格式不正确: {target}。正确格式应为: x.x.x.x (如: 192.168.1.1)")
 
             # 构建DiagnosticTask
             return DiagnosticTask(
                 task_id=task_id,
                 user_input=user_input,
-                source=extracted_info["source"],
-                target=extracted_info["target"],
+                source=source,
+                target=target,
                 protocol=self._parse_protocol(extracted_info["protocol"]),
                 port=extracted_info.get("port"),
                 fault_type=self._parse_fault_type(extracted_info["fault_type"])
@@ -318,6 +332,16 @@ class NLU:
         Returns:
             DiagnosticTask对象
         """
+        # 先进行输入验证
+        from ..utils.input_validator import extract_network_info
+        
+        # 提取并验证网络信息
+        source, target, port, error = extract_network_info(user_input)
+        
+        # 如果验证失败,抛出异常让用户重新输入
+        if error:
+            raise ValueError(error)
+        
         # 简单的规则解析
         if "端口" in user_input or "telnet" in user_input.lower():
             fault_type = FaultType.PORT_UNREACHABLE
@@ -328,19 +352,6 @@ class NLU:
         else:
             fault_type = FaultType.PORT_UNREACHABLE
             protocol = Protocol.TCP
-
-        # 提取主机名（简化版）
-        parts = user_input.replace("到", " ").replace("端口", " ").replace("不通", "").strip().split()
-
-        source = parts[0] if len(parts) > 0 else "unknown_source"
-        target = parts[1] if len(parts) > 1 else "unknown_target"
-
-        # 提取端口号
-        port = None
-        for part in parts:
-            if part.isdigit():
-                port = int(part)
-                break
 
         return DiagnosticTask(
             task_id=task_id,
