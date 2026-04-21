@@ -90,7 +90,7 @@ def deserialize_context(data: str) -> List[Dict]:
     return json.loads(data)
 
 
-def extract_llm_config(llm_client: LLMClient) -> str:
+def extract_llm_config(llm_client: Optional[LLMClient]) -> Optional[str]:
     """
     提取 LLMClient 的配置信息
     
@@ -100,6 +100,9 @@ def extract_llm_config(llm_client: LLMClient) -> str:
     Returns:
         JSON 字符串，包含重建所需的配置
     """
+    if llm_client is None:
+        return None
+
     config = {
         'api_key': llm_client.api_key,
         'base_url': llm_client.base_url,
@@ -110,7 +113,7 @@ def extract_llm_config(llm_client: LLMClient) -> str:
     return json.dumps(config, ensure_ascii=False)
 
 
-def rebuild_llm_client(config: str) -> LLMClient:
+def rebuild_llm_client(config: Optional[str]) -> Optional[LLMClient]:
     """
     从配置重建 LLMClient 对象
     
@@ -120,6 +123,9 @@ def rebuild_llm_client(config: str) -> LLMClient:
     Returns:
         LLMClient 对象
     """
+    if not config:
+        return None
+
     config_dict = json.loads(config)
     
     # 使用配置创建新的 LLMClient

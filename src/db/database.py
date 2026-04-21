@@ -63,6 +63,24 @@ class SessionDatabase:
                 )
             """)
             
+            # 创建网络访问关系资产表
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS network_access_assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    src_system TEXT NOT NULL,
+                    src_system_name TEXT,
+                    src_deploy_unit TEXT,
+                    src_ip TEXT,
+                    dst_system TEXT NOT NULL,
+                    dst_deploy_unit TEXT,
+                    dst_ip TEXT,
+                    protocol TEXT DEFAULT 'TCP',
+                    port TEXT,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL
+                )
+            """)
+            
             # 创建索引
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_sessions_status 
@@ -77,6 +95,16 @@ class SessionDatabase:
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_messages_session_id 
                 ON messages(session_id)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_assets_src_system
+                ON network_access_assets(src_system)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_assets_dst_system
+                ON network_access_assets(dst_system)
             """)
             
             await db.commit()
@@ -313,3 +341,394 @@ class SessionDatabase:
         except Exception as e:
             print(f"[SessionDatabase] 获取所有会话失败: {e}")
             return []
+
+    # ===== 网络访问关系资产 CRUD =====
+
+    async def create_access_asset(self, asset_data: Dict[str, Any]) -> Optional[int]:
+        """
+        新增一条网络访问关系资产
+
+        Args:
+            asset_data: 资产数据字典
+
+        Returns:
+            新记录的 id，失败返回 None
+        """
+        try:
+            now = datetime.now().isoformat()
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    INSERT INTO network_access_assets (
+                        src_system, src_system_name, src_deploy_unit, src_ip,
+                        dst_system, dst_deploy_unit, dst_ip,
+                        protocol, port, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    asset_data['src_system'],
+                    asset_data.get('src_system_name', ''),
+                    asset_data.get('src_deploy_unit', ''),
+                    asset_data.get('src_ip', ''),
+                    asset_data['dst_system'],
+                    asset_data.get('dst_deploy_unit', ''),
+                    asset_data.get('dst_ip', ''),
+                    asset_data.get('protocol', 'TCP'),
+                    asset_data.get('port', ''),
+                    now,
+                    now
+                ))
+                await db.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            print(f"[SessionDatabase] 新增访问关系资产失败: {e}")
+            return None
+
+    async def query_access_assets(
+        self,
+        src_system: Optional[str] = None,
+        dst_system: Optional[str] = None,
+        src_deploy_unit: Optional[str] = None,
+        keyword: Optional[str] = None,
+        protocol: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Dict[str, Any]:
+        """
+        查询网络访问关系资产（支持多条件+分页）
+
+        Args:
+            src_system: 按源系统过滤（模糊匹配 src_system 或 src_system_name）
+            dst_system: 按目的系统过滤（模糊匹配）
+            src_deploy_unit: 按源部署单元过滤（精确匹配 src_deploy_unit）
+            keyword: 全字段模糊搜索关键词
+            protocol: 按协议精确过滤
+
+        Returns:
+            {"items": [...], "total": int, "page": int, "page_size": int}
+        """
+        try:
+            conditions = []
+            params = []
+
+            if src_system:
+                conditions.append("(src_system LIKE ? OR src_system_name LIKE ?)")
+                params.extend([f"%{src_system}%", f"%{src_system}%"])
+            if dst_system:
+                conditions.append("(dst_system LIKE ?)")
+                params.append(f"%{dst_system}%")
+            if src_deploy_unit:
+                conditions.append("(src_deploy_unit = ?)")
+                params.append(src_deploy_unit)
+            if keyword:
+                conditions.append(
+                    "(src_system LIKE ? OR src_system_name LIKE ? OR dst_system LIKE ? "
+                    "OR src_deploy_unit LIKE ? OR dst_deploy_unit LIKE ? "
+                    "OR src_ip LIKE ? OR dst_ip LIKE ?)"
+                )
+                params.extend([f"%{keyword}%"] * 7)
+            if protocol:
+                conditions.append("protocol = ?")
+                params.append(protocol)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                # 查询总数
+                count_sql = f"SELECT COUNT(*) FROM network_access_assets {where_clause}"
+                async with db.execute(count_sql, params) as cursor:
+                    row = await cursor.fetchone()
+                    total = row[0] if row else 0
+
+                # 查询分页数据
+                offset = (page - 1) * page_size
+                data_sql = (
+                    f"SELECT * FROM network_access_assets {where_clause} "
+                    f"ORDER BY id DESC LIMIT ? OFFSET ?"
+                )
+                async with db.execute(data_sql, params + [page_size, offset]) as cursor:
+                    rows = await cursor.fetchall()
+                    items = [dict(row) for row in rows]
+
+            return {"items": items, "total": total, "page": page, "page_size": page_size}
+        except Exception as e:
+            print(f"[SessionDatabase] 查询访问关系资产失败: {e}")
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+    async def _resolve_system_codes(
+        self,
+        db: aiosqlite.Connection,
+        system_code: Optional[str] = None,
+        system_name: Optional[str] = None
+    ) -> List[str]:
+        """Resolve source-side system codes from explicit code or system name."""
+        if system_code:
+            return [system_code.strip()]
+
+        if not system_name:
+            return []
+
+        async with db.execute(
+            """
+            SELECT DISTINCT src_system
+            FROM network_access_assets
+            WHERE src_system_name LIKE ?
+            ORDER BY src_system
+            """,
+            (f"%{system_name.strip()}%",)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows if row and row[0]]
+
+    async def _query_directional_access_relations(
+        self,
+        db: aiosqlite.Connection,
+        direction: str,
+        system_codes: List[str],
+        deploy_unit: Optional[str],
+        peer_system_codes: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Query one direction of access relations."""
+        conditions = []
+        params: List[Any] = []
+
+        if direction == "outbound":
+            system_field = "src_system"
+            deploy_field = "src_deploy_unit"
+            peer_field = "dst_system"
+        else:
+            system_field = "dst_system"
+            deploy_field = "dst_deploy_unit"
+            peer_field = "src_system"
+
+        if system_codes:
+            placeholders = ",".join("?" for _ in system_codes)
+            conditions.append(f"{system_field} IN ({placeholders})")
+            params.extend(system_codes)
+
+        if deploy_unit:
+            conditions.append(f"{deploy_field} = ?")
+            params.append(deploy_unit.strip())
+
+        if peer_system_codes:
+            placeholders = ",".join("?" for _ in peer_system_codes)
+            conditions.append(f"{peer_field} IN ({placeholders})")
+            params.extend(peer_system_codes)
+
+        if not conditions:
+            return []
+
+        where_clause = " AND ".join(conditions)
+        async with db.execute(
+            f"SELECT * FROM network_access_assets WHERE {where_clause} ORDER BY id DESC",
+            params
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def query_access_relations(
+        self,
+        system_code: Optional[str] = None,
+        system_name: Optional[str] = None,
+        deploy_unit: Optional[str] = None,
+        direction: str = "outbound",
+        peer_system_code: Optional[str] = None,
+        peer_system_name: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> Dict[str, Any]:
+        """Query access relations for chat/tool-calling scenarios."""
+        try:
+            if direction not in {"outbound", "inbound", "both"}:
+                raise ValueError(f"Unsupported direction: {direction}")
+
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                system_codes = await self._resolve_system_codes(
+                    db=db,
+                    system_code=system_code,
+                    system_name=system_name
+                )
+                peer_system_codes = await self._resolve_system_codes(
+                    db=db,
+                    system_code=peer_system_code,
+                    system_name=peer_system_name
+                )
+
+                if (system_code or system_name) and not system_codes:
+                    return {"items": [], "total": 0, "page": page, "page_size": page_size}
+                if (peer_system_code or peer_system_name) and not peer_system_codes:
+                    return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+                if direction == "both":
+                    outbound_items = await self._query_directional_access_relations(
+                        db=db,
+                        direction="outbound",
+                        system_codes=system_codes,
+                        deploy_unit=deploy_unit,
+                        peer_system_codes=peer_system_codes
+                    )
+                    inbound_items = await self._query_directional_access_relations(
+                        db=db,
+                        direction="inbound",
+                        system_codes=system_codes,
+                        deploy_unit=deploy_unit,
+                        peer_system_codes=peer_system_codes
+                    )
+
+                    merged = {}
+                    for item in outbound_items + inbound_items:
+                        merged[item["id"]] = item
+                    items = sorted(merged.values(), key=lambda item: item["id"], reverse=True)
+                else:
+                    items = await self._query_directional_access_relations(
+                        db=db,
+                        direction=direction,
+                        system_codes=system_codes,
+                        deploy_unit=deploy_unit,
+                        peer_system_codes=peer_system_codes
+                    )
+
+            total = len(items)
+            safe_page = max(1, page)
+            safe_page_size = min(100, max(1, page_size))
+            offset = (safe_page - 1) * safe_page_size
+            paged_items = items[offset:offset + safe_page_size]
+            return {
+                "items": paged_items,
+                "total": total,
+                "page": safe_page,
+                "page_size": safe_page_size,
+            }
+        except Exception as e:
+            print(f"[SessionDatabase] chat 查询访问关系失败: {e}")
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+    async def delete_access_asset(self, asset_id: int) -> bool:
+        """
+        删除一条网络访问关系资产
+
+        Args:
+            asset_id: 记录 id
+
+        Returns:
+            是否成功
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                result = await db.execute(
+                    "DELETE FROM network_access_assets WHERE id = ?",
+                    (asset_id,)
+                )
+                await db.commit()
+                return result.rowcount > 0
+        except Exception as e:
+            print(f"[SessionDatabase] 删除访问关系资产失败: {e}")
+            return False
+
+    async def seed_access_assets_if_empty(self) -> int:
+        """
+        如果访问关系资产表为空，插入 Mock 示例数据
+
+        Returns:
+            插入的记录数
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("SELECT COUNT(*) FROM network_access_assets") as cursor:
+                    row = await cursor.fetchone()
+                    if row and row[0] > 0:
+                        return 0  # 已有数据，不重复插入
+
+            mock_data = [
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ADDNG_WB',
+                    'dst_ip': '10.87.28.127', 'protocol': 'TCP', 'port': '8080\n8900'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ADNNG_WB',
+                    'dst_ip': '10.36.16.67', 'protocol': 'TCP', 'port': '8080\n8900'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ADNNG_WB',
+                    'dst_ip': '10.36.24.98', 'protocol': 'TCP', 'port': '8080\n8900'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ADDNG_WB',
+                    'dst_ip': '10.87.20.106', 'protocol': 'TCP', 'port': '8080\n8900'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ACNNG_WB',
+                    'dst_ip': '10.36.24.113', 'protocol': 'TCP', 'port': '8070'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ACNNG_WB',
+                    'dst_ip': '10.36.16.30', 'protocol': 'TCP', 'port': '8070'
+                },
+                {
+                    'src_system': 'N-AQM', 'src_system_name': '金融资产质量管理',
+                    'src_deploy_unit': 'AQMJS_AP', 'src_ip': '10.37.1.116\n10.37.1.20',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ACDNG_WB',
+                    'dst_ip': '10.87.20.108', 'protocol': 'TCP', 'port': '8070'
+                },
+                {
+                    'src_system': 'N-CRM', 'src_system_name': '客户关系管理系统',
+                    'src_deploy_unit': 'CRMJS_AP', 'src_ip': '10.38.1.100\n10.38.1.101',
+                    'dst_system': 'N-AQM', 'dst_deploy_unit': 'AQMJS_AP',
+                    'dst_ip': '10.37.1.116', 'protocol': 'TCP', 'port': '8080'
+                },
+                {
+                    'src_system': 'N-CRM', 'src_system_name': '客户关系管理系统',
+                    'src_deploy_unit': 'CRMJS_AP', 'src_ip': '10.38.1.100\n10.38.1.101',
+                    'dst_system': 'P-DB-MAIN', 'dst_deploy_unit': 'DBMAIN_DB',
+                    'dst_ip': '10.20.5.50', 'protocol': 'TCP', 'port': '1521'
+                },
+                {
+                    'src_system': 'N-OA', 'src_system_name': '办公自动化系统',
+                    'src_deploy_unit': 'OAJS_AP', 'src_ip': '10.40.1.10',
+                    'dst_system': 'N-CRM', 'dst_deploy_unit': 'CRMJS_AP',
+                    'dst_ip': '10.38.1.100', 'protocol': 'TCP', 'port': '8443'
+                },
+                {
+                    'src_system': 'N-OA', 'src_system_name': '办公自动化系统',
+                    'src_deploy_unit': 'OAJS_WEB', 'src_ip': '10.40.2.10\n10.40.2.11',
+                    'dst_system': 'N-OA', 'dst_deploy_unit': 'OAJS_AP',
+                    'dst_ip': '10.40.1.10', 'protocol': 'TCP', 'port': '8080'
+                },
+                {
+                    'src_system': 'N-OA', 'src_system_name': '办公自动化系统',
+                    'src_deploy_unit': 'OAJS_WEB', 'src_ip': '10.40.2.10\n10.40.2.11',
+                    'dst_system': 'P-ZH-DMP-CONF', 'dst_deploy_unit': 'ADDNG_WB',
+                    'dst_ip': '10.87.28.127', 'protocol': 'TCP', 'port': '443'
+                },
+                {
+                    'src_system': 'N-OA', 'src_system_name': '办公自动化系统',
+                    'src_deploy_unit': 'OAJS_DB', 'src_ip': '10.40.3.10',
+                    'dst_system': 'P-DB-MAIN', 'dst_deploy_unit': 'DBMAIN_DB',
+                    'dst_ip': '10.20.5.50', 'protocol': 'TCP', 'port': '1521'
+                },
+            ]
+
+            count = 0
+            for item in mock_data:
+                result = await self.create_access_asset(item)
+                if result:
+                    count += 1
+            print(f"[SessionDatabase] 已插入 {count} 条访问关系 Mock 数据")
+            return count
+        except Exception as e:
+            print(f"[SessionDatabase] 插入 Mock 数据失败: {e}")
+            return 0

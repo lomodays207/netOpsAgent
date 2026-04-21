@@ -10,7 +10,7 @@ API 文档：
 import asyncio
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional
 import json
 
 from fastapi import FastAPI, HTTPException
@@ -20,7 +20,11 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 
-from .agent import NLU
+from .agent import IntentRouter, NLU
+from .agent.general_chat_agent import (
+    GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE,
+    GeneralChatToolAgent,
+)
 from .agent.llm_agent import LLMAgent, NeedUserInputException
 from .integrations import LLMClient
 from .session_manager import get_session_manager, DiagnosisSession
@@ -41,6 +45,7 @@ if os.path.exists("static"):
 
 # 初始化会话管理器
 session_manager = get_session_manager()
+intent_router = IntentRouter()
 
 
 @app.on_event("startup")
@@ -50,6 +55,8 @@ async def startup_event():
     await session_manager.initialize()
     # 启动会话清理任务
     await session_manager.start_cleanup()
+    if hasattr(session_manager, "db") and session_manager.db:
+        await session_manager.db.seed_access_assets_if_empty()
     print("[API] 会话管理器已启动")
 
 
@@ -99,6 +106,15 @@ class GeneralChatRequest(BaseModel):
         }
 
 
+class ChatStreamRequest(BaseModel):
+    """Unified chat request routed on the backend."""
+    message: str = Field(..., min_length=1, description="User message")
+    session_id: Optional[str] = Field(None, description="Optional session id")
+    use_llm: bool = Field(default=True, description="Use LLM-powered diagnosis parsing")
+    verbose: bool = Field(default=False, description="Include verbose tool output in diagnosis")
+    use_rag: bool = Field(default=True, description="Use knowledge retrieval in general chat")
+
+
 class RenameSessionRequest(BaseModel):
     """重命名会话请求"""
     new_name: str = Field(..., description="新的会话名称", min_length=1, max_length=500)
@@ -131,6 +147,126 @@ def generate_task_id() -> str:
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     short_uuid = str(uuid.uuid4())[:8]
     return f"task_{timestamp}_{short_uuid}"
+
+
+def build_general_chat_system_prompt(use_rag: bool = False) -> str:
+    """Build the general chat prompt with optional RAG guidance."""
+    rag_instruction = (
+        "如果知识库检索返回了参考资料，请优先依据参考资料回答一般网络运维问题。"
+        if use_rag else
+        "当前未启用知识库增强；对于一般网络运维问题，可基于你的专业知识回答。"
+    )
+    return GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE.format(rag_instruction=rag_instruction)
+
+
+def is_access_relation_data_query(message: str) -> bool:
+    """
+    检测消息是否为访问关系数据查询（而非知识咨询）
+    
+    访问关系数据查询的特征：
+    1. 包含系统标识符（系统编码、系统名称或部署单元）
+    2. 询问访问关系数据
+    3. 不是询问知识性问题（如何、流程、权限等）
+    
+    Args:
+        message: 用户消息
+        
+    Returns:
+        True 如果是访问关系数据查询，False 否则
+        
+    Examples:
+        >>> is_access_relation_data_query("N-CRM有哪些访问关系")
+        True
+        >>> is_access_relation_data_query("访问关系如何开权限")
+        False
+        >>> is_access_relation_data_query("CRMJS_AP部署单元有哪些访问关系")
+        True
+    """
+    import re
+    
+    # 系统标识符模式：系统编码、系统名称、部署单元
+    # 匹配系统编码（N-XXX, P-XXX-XXX）、部署单元（XXXJS_XXX）、或包含"系统"的中文名称
+    # 也匹配常见系统简称（如"办公自动化"、"客户关系管理"等，可能不带"系统"二字）
+    system_identifier_pattern = r"(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|[\u4e00-\u9fa5]{2,}系统|客户关系管理|办公自动化|部署单元)"
+    
+    # 访问关系查询关键词
+    relation_query_pattern = r"(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系)"
+    
+    # 知识性问题关键词（如果匹配，则不应跳过 RAG）
+    # 使用更严格的模式，避免匹配系统名称中的"管理"字
+    # 要求知识关键词前后有特定上下文或位于句子开头/结尾
+    knowledge_query_pattern = r"(如何|怎么|流程|权限|提单|申请|审批)(?!系统)|(?<!关系)管理(?!系统)"
+    
+    has_system_identifier = bool(re.search(system_identifier_pattern, message))
+    asks_for_relations = bool(re.search(relation_query_pattern, message))
+    asks_for_knowledge = bool(re.search(knowledge_query_pattern, message))
+    
+    # 只有当包含系统标识符、询问访问关系、且不是知识性问题时，才是数据查询
+    return has_system_identifier and asks_for_relations and not asks_for_knowledge
+
+
+def create_general_chat_task(session_id: str, user_message: str):
+    """Create the lightweight task object used by session storage."""
+    from .models.task import DiagnosticTask, FaultType, Protocol
+
+    return DiagnosticTask(
+        task_id=session_id,
+        user_input=user_message,
+        source="general_chat",
+        target="general_chat",
+        protocol=Protocol.ICMP,
+        fault_type=FaultType.CONNECTIVITY,
+        port=None,
+    )
+
+
+async def _ensure_general_chat_session(session_id: Optional[str], message: str):
+    """Get or create a lightweight general-chat session."""
+    if session_id:
+        session = await session_manager.get_session(session_id)
+        if session:
+            return session_id, session
+
+    resolved_session_id = session_id or generate_task_id()
+    session = session_manager.create_session(
+        session_id=resolved_session_id,
+        task=create_general_chat_task(resolved_session_id, message),
+        llm_client=None,
+        agent=None,
+    )
+    return resolved_session_id, session
+
+
+def _build_clarify_stream_response(
+    *,
+    session_id: Optional[str],
+    user_message: str,
+    clarify_message: str,
+) -> StreamingResponse:
+    async def event_generator():
+        resolved_session_id, _ = await _ensure_general_chat_session(session_id, user_message)
+        await session_manager.add_message(resolved_session_id, "user", user_message)
+        await session_manager.add_message(resolved_session_id, "assistant", clarify_message)
+        session_manager.update_session(resolved_session_id, status="completed")
+
+        yield f"data: {json.dumps({'type': 'start', 'session_id': resolved_session_id}, ensure_ascii=False)}\n\n"
+        chunk_size = 10
+        for index in range(0, len(clarify_message), chunk_size):
+            chunk = clarify_message[index:index + chunk_size]
+            yield f"data: {json.dumps({'type': 'content', 'text': chunk}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.02)
+
+        yield f"data: {json.dumps({'type': 'complete', 'session_id': resolved_session_id, 'rag_used': False}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/")
@@ -174,6 +310,59 @@ async def health_check():
                 "timestamp": datetime.now().isoformat()
             }
         )
+
+
+@app.post("/api/v1/chat/stream")
+async def chat_stream(request: ChatStreamRequest):
+    """Unified streaming entrypoint with backend intent routing."""
+    session = await session_manager.get_session(request.session_id) if request.session_id else None
+    decision = intent_router.route_message(request.message, session=session)
+
+    if decision.route == "start_diagnosis":
+        return await diagnose_stream(
+            DiagnoseRequest(
+                description=request.message,
+                use_llm=request.use_llm,
+                verbose=request.verbose,
+                session_id=request.session_id,
+            )
+        )
+
+    if decision.route == "continue_diagnosis":
+        if not request.session_id:
+            return _build_clarify_stream_response(
+                session_id=None,
+                user_message=request.message,
+                clarify_message=(
+                    "当前没有可继续的诊断会话。"
+                    "如果你要我直接开始诊断，请提供源主机、目标主机和端口。"
+                ),
+            )
+        return await chat_answer(
+            ChatAnswerRequest(
+                session_id=request.session_id,
+                answer=request.message,
+            )
+        )
+
+    if decision.route == "clarify":
+        return _build_clarify_stream_response(
+            session_id=request.session_id,
+            user_message=request.message,
+            clarify_message=decision.clarify_message
+            or (
+                "你是想了解排查方法，还是要我直接开始诊断？"
+                "如果要直接诊断，请提供源主机、目标主机和端口。"
+            ),
+        )
+
+    return await general_chat_stream_v2(
+        GeneralChatRequestWithRAG(
+            message=request.message,
+            session_id=request.session_id,
+            use_rag=request.use_rag,
+        )
+    )
 
 
 @app.post("/api/v1/diagnose", response_model=DiagnoseResponse)
@@ -694,7 +883,7 @@ async def chat_answer(request: ChatAnswerRequest):
     )
 
 
-@app.post("/api/v1/chat/general")
+@app.post("/api/v1/chat/general-legacy")
 async def general_chat(request: GeneralChatRequest):
     """
     通用聊天接口（非诊断模式）
@@ -842,6 +1031,51 @@ async def general_chat(request: GeneralChatRequest):
             status_code=500,
             detail=f"聊天失败: {str(e)}"
         )
+
+
+@app.post("/api/v1/chat/general")
+async def general_chat_v2(request: GeneralChatRequest):
+    """通用聊天接口，支持访问关系 tool calling。"""
+    try:
+        if request.session_id:
+            session = await session_manager.get_session(request.session_id)
+            if not session:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"会话不存在: {request.session_id}"
+                )
+            session_id = request.session_id
+            llm_client = session.llm_client or LLMClient()
+            if session.llm_client is None:
+                session_manager.update_session(session_id, llm_client=llm_client)
+        else:
+            llm_client = LLMClient()
+            session_id = generate_task_id()
+            session = session_manager.create_session(
+                session_id=session_id,
+                task=create_general_chat_task(session_id, request.message),
+                llm_client=llm_client,
+                agent=LLMAgent(llm_client=llm_client, verbose=False)
+            )
+
+        await session_manager.add_message(session_id, "user", request.message)
+        tool_agent = GeneralChatToolAgent(
+            llm_client=llm_client,
+            session_manager=session_manager,
+            session_id=session_id,
+        )
+        response = await tool_agent.run(
+            session_messages=session.messages,
+            system_prompt=build_general_chat_system_prompt(use_rag=False),
+        )
+
+        await session_manager.add_message(session_id, "assistant", response)
+        session_manager.update_session(session_id, status="completed")
+        return {"response": response, "session_id": session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"聊天失败: {str(e)}")
 
 
 
@@ -1471,7 +1705,7 @@ class GeneralChatRequestWithRAG(BaseModel):
         }
 
 
-@app.post("/api/v1/chat/general/stream")
+@app.post("/api/v1/chat/general/stream-legacy")
 async def general_chat_stream(request: GeneralChatRequestWithRAG):
     """
     通用聊天接口（流式，支持RAG）
@@ -1597,7 +1831,207 @@ async def general_chat_stream(request: GeneralChatRequestWithRAG):
     )
 
 
+@app.post("/api/v1/chat/general/stream")
+async def general_chat_stream_v2(request: GeneralChatRequestWithRAG):
+    """流式通用聊天接口，支持 RAG 与访问关系 tool calling。"""
+
+    async def event_generator():
+        event_queue: asyncio.Queue = asyncio.Queue()
+
+        try:
+            if request.session_id:
+                session = await session_manager.get_session(request.session_id)
+                if not session:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"会话不存在: {request.session_id}"
+                    )
+                session_id = request.session_id
+                llm_client = session.llm_client or LLMClient()
+                if session.llm_client is None:
+                    session_manager.update_session(session_id, llm_client=llm_client)
+            else:
+                llm_client = LLMClient()
+                session_id = generate_task_id()
+                session = session_manager.create_session(
+                    session_id=session_id,
+                    task=create_general_chat_task(session_id, request.message),
+                    llm_client=llm_client,
+                    agent=LLMAgent(llm_client=llm_client, verbose=False)
+                )
+
+            yield f"data: {json.dumps({'type': 'start', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+
+            system_prompt = build_general_chat_system_prompt(use_rag=request.use_rag)
+            retrieved_docs = []
+
+            # Task 3.2: Detect if we should skip RAG for access relation data queries
+            skip_rag = False
+            if request.use_rag and is_access_relation_data_query(request.message):
+                skip_rag = True
+                yield f"data: {json.dumps({'type': 'rag_skipped', 'reason': '检测到访问关系数据查询,跳过知识库检索'}, ensure_ascii=False)}\n\n"
+
+            # Task 3.3: Only execute RAG if not skipped
+            if request.use_rag and not skip_rag:
+                try:
+                    _, _, rag_chain = _init_rag_services()
+                    if rag_chain.has_knowledge():
+                        yield f"data: {json.dumps({'type': 'rag_start', 'message': '正在检索知识库...'}, ensure_ascii=False)}\n\n"
+                        _, system_prompt, retrieved_docs = rag_chain.build_enhanced_prompt(
+                            request.message,
+                            system_prompt_template=GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE
+                        )
+                        if retrieved_docs:
+                            yield f"data: {json.dumps({'type': 'rag_result', 'count': len(retrieved_docs), 'sources': [d.get('metadata', {}).get('filename', '未知') for d in retrieved_docs]}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'rag_result', 'count': 0, 'message': '知识库中未找到相关内容'}, ensure_ascii=False)}\n\n"
+                except Exception as e:
+                    print(f"[API] RAG检索失败: {e}")
+                    yield f"data: {json.dumps({'type': 'rag_error', 'message': f'知识库检索失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+
+            await session_manager.add_message(session_id, "user", request.message)
+
+            async def callback(event: Dict):
+                await event_queue.put(event)
+                await asyncio.sleep(0)
+
+            tool_agent = GeneralChatToolAgent(
+                llm_client=llm_client,
+                session_manager=session_manager,
+                session_id=session_id,
+                event_callback=callback,
+            )
+            response_task = asyncio.create_task(
+                tool_agent.run(
+                    session_messages=session.messages,
+                    system_prompt=system_prompt,
+                )
+            )
+
+            while True:
+                if response_task.done() and event_queue.empty():
+                    break
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=0.1)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+
+            response = await response_task
+            await session_manager.add_message(session_id, "assistant", response)
+            session_manager.update_session(session_id, status="completed")
+
+            chunk_size = 10
+            for i in range(0, len(response), chunk_size):
+                chunk = response[i:i + chunk_size]
+                yield f"data: {json.dumps({'type': 'content', 'text': chunk}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.02)
+
+            yield f"data: {json.dumps({'type': 'complete', 'session_id': session_id, 'rag_used': request.use_rag and len(retrieved_docs) > 0}, ensure_ascii=False)}\n\n"
+        except HTTPException as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': e.detail}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+class AccessAssetCreate(BaseModel):
+    """新增网络访问关系资产请求"""
+    src_system: str = Field(..., description="源物理子系统（代码）", min_length=1)
+    src_system_name: str = Field(default="", description="源物理子系统中文名")
+    src_deploy_unit: str = Field(default="", description="源部署单元属性")
+    src_ip: str = Field(default="", description="源IP地址（多个用换行分隔）")
+    dst_system: str = Field(..., description="目的物理子系统（代码）", min_length=1)
+    dst_deploy_unit: str = Field(default="", description="目的部署单元属性")
+    dst_ip: str = Field(default="", description="目的IP地址")
+    protocol: str = Field(default="TCP", description="协议（TCP/UDP等）")
+    port: str = Field(default="", description="目的端口（多个用换行分隔）")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "src_system": "N-AQM",
+                "src_system_name": "金融资产质量管理",
+                "src_deploy_unit": "AQMJS_AP",
+                "src_ip": "10.37.1.116",
+                "dst_system": "P-ZH-DMP-CONF",
+                "dst_deploy_unit": "ADDNG_WB",
+                "dst_ip": "10.87.28.127",
+                "protocol": "TCP",
+                "port": "8080"
+            }
+        }
+
+
+@app.get("/api/v1/assets/access-relations")
+async def list_access_assets(
+    src_system: Optional[str] = None,
+    dst_system: Optional[str] = None,
+    keyword: Optional[str] = None,
+    protocol: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20
+):
+    """查询网络访问关系资产列表（支持多条件过滤+分页）"""
+    try:
+        if not hasattr(session_manager, "db") or not session_manager.db:
+            raise HTTPException(status_code=500, detail="数据库不可用")
+        result = await session_manager.db.query_access_assets(
+            src_system=src_system,
+            dst_system=dst_system,
+            keyword=keyword,
+            protocol=protocol,
+            page=max(1, page),
+            page_size=min(100, max(1, page_size))
+        )
+        return {"status": "success", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@app.post("/api/v1/assets/access-relations", status_code=201)
+async def create_access_asset(request: AccessAssetCreate):
+    """新增一条网络访问关系资产记录"""
+    try:
+        if not hasattr(session_manager, "db") or not session_manager.db:
+            raise HTTPException(status_code=500, detail="数据库不可用")
+        asset_id = await session_manager.db.create_access_asset(request.dict())
+        if asset_id is None:
+            raise HTTPException(status_code=500, detail="创建记录失败")
+        return {"status": "success", "id": asset_id, "message": "访问关系记录已创建"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"新增失败: {str(e)}")
+
+
+@app.delete("/api/v1/assets/access-relations/{asset_id}")
+async def delete_access_asset_route(asset_id: int):
+    """删除一条网络访问关系资产记录"""
+    try:
+        if not hasattr(session_manager, "db") or not session_manager.db:
+            raise HTTPException(status_code=500, detail="数据库不可用")
+        success = await session_manager.db.delete_access_asset(asset_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"记录不存在: {asset_id}")
+        return {"status": "success", "message": "记录已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

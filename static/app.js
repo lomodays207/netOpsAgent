@@ -2,6 +2,9 @@
 let currentSessionId = null;
 let isWaitingForResponse = false;
 let currentAssistantMessage = null;
+let currentStreamingMessage = null;
+let currentStreamingText = '';
+let currentToolRunId = null;
 
 // DOM 元素
 const form = document.getElementById('chat-form');
@@ -15,7 +18,7 @@ const verboseCheckbox = document.getElementById('verbose');
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🤖 AI 网络访问关系诊断助手已加载');
+    console.log('🤖 AI 网络访问关系智能助手已加载');
 
     // 恢复会话（如果存在）
     restoreSession();
@@ -252,86 +255,20 @@ async function handleSubmit(e) {
         return;
     }
 
-    // 添加用户消息
     addUserMessage(message);
-
-    // 清空输入框
     userInput.value = '';
     autoResizeTextarea();
 
-    // 禁用输入并显示停止按钮
     setInputEnabled(false);
     toggleStopButton(true);
-
-    // 添加加载指示器
     showTypingIndicator();
 
     try {
-        // 改进的意图识别逻辑：区分知识查询和诊断请求
-
-        // 1. 检测是否包含IP地址
-        const hasIP = /\d+\.\d+\.\d+\.\d+/.test(message);
-
-        // 2. 检测是否为疑问句（知识查询的特征）
-        const isQuestion = /(怎么|如何|什么是|为什么|哪些|是否|能否|可以|请问|请教|\?|？)/.test(message);
-
-        // 3. 检测诊断关键词（缩小范围，移除"排查"、"诊断"、"故障"等通用词）
-        const hasDiagnosticKeywords = /(不通|无法访问|连接失败|连接超时|拒绝连接)/.test(message);
-
-        // 4. 检测是否包含工具命令 + 具体参数
-        const hasSpecificToolCmd = /(ping|traceroute|telnet)\s+\d+/.test(message.toLowerCase());
-
-        // 5. 判断是否为诊断请求：
-        //    - 有IP地址，或
-        //    - (有故障关键词 且 不是疑问句)，或
-        //    - 有工具命令
-        const looksLikeNewDiagnosis = hasIP || (hasDiagnosticKeywords && !isQuestion) || hasSpecificToolCmd;
-
-        // 获取当前会话类型
-        const sessionType = localStorage.getItem('sessionType');
-
-        // 路由决策
-        if (currentSessionId && sessionType === 'general' && !hasIP) {
-            // 通用聊天会话，且没有IP地址 → 继续通用聊天（即使用户说了"不通"等词，在通用聊天里也优先保持聊天）
-            console.log('📝 继续通用聊天会话');
-            await generalChat(message);
-        } else if (currentSessionId && !looksLikeNewDiagnosis) {
-            // 有会话ID，但不像新诊断
-            const isGeneralChatSession = sessionType === 'general';
-
-            if (isGeneralChatSession) {
-                // 通用聊天会话，使用 generalChat 继续
-                console.log('📝 通用聊天模式');
-                await generalChat(message);
-            } else {
-                // 诊断会话，使用 continueChat 回答问题
-                console.log('🔧 继续诊断会话');
-                await continueChat(message);
-            }
-        } else if (looksLikeNewDiagnosis) {
-            // 明确的诊断请求
-            console.log('🔧 检测到诊断请求');
-
-            if (currentSessionId) {
-                console.log('🔧 在现有会话中开始新诊断');
-                // clearSession(); // 不再清除会话
-            }
-            await startNewChat(message, currentSessionId);
-        } else if (!currentSessionId && !looksLikeNewDiagnosis) {
-            // 没有会话ID，也不像诊断 → 默认通用聊天
-            console.log('📝 新的通用聊天');
-            await generalChat(message);
-        } else {
-            // 没有会话ID，是诊断请求
-            console.log('🔧 新的诊断会话');
-            await startNewChat(message);
-        }
+        await submitMessage(message);
     } catch (error) {
-        console.error('诊断失败:', error);
-        addAssistantMessage(`抱歉，诊断过程中出错了：${error.message}`);
+        console.error('Failed to submit message:', error);
+        addAssistantMessage(`Request failed: ${error.message}`);
     } finally {
-        // 只有当流完全结束或被中断后，才恢复 UI
-        // 注意：如果是 processStream，它内部会等待循环结束
         if (!isWaitingForResponse) {
             hideTypingIndicator();
             setInputEnabled(true);
@@ -340,7 +277,31 @@ async function handleSubmit(e) {
     }
 }
 
-// 停止生成
+async function submitMessage(message) {
+    const useLLM = useLLMCheckbox.checked;
+    const verbose = verboseCheckbox.checked;
+    const useRAG = useRAGCheckbox ? useRAGCheckbox.checked : true;
+
+    const response = await fetch('/api/v1/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message,
+            session_id: currentSessionId,
+            use_llm: useLLM,
+            verbose,
+            use_rag: useRAG
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    await processStream(response);
+}
+
+// ????
 async function stopGeneration() {
     if (!isWaitingForResponse) return;
 
@@ -384,208 +345,6 @@ function toggleStopButton(show) {
 }
 
 // 开始新诊断
-async function startNewChat(description, sessionId = null) {
-    const useLLM = useLLMCheckbox.checked;
-    const verbose = verboseCheckbox.checked;
-
-    console.log('🚀 开始新诊断...');
-
-    const body = {
-        description,
-        use_llm: useLLM,
-        verbose
-    };
-
-    if (sessionId) {
-        body.session_id = sessionId;
-    }
-
-    const response = await fetch('/api/v1/diagnose/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
-    await processStream(response);
-}
-
-// 继续诊断（用户回答问题后）
-async function continueChat(answer) {
-    console.log('💬 继续诊断，会话ID:', currentSessionId);
-
-    const response = await fetch('/api/v1/chat/answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            session_id: currentSessionId,
-            answer
-        })
-    });
-
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
-    await processStream(response);
-}
-
-// 通用聊天（非诊断模式，支持RAG）
-async function generalChat(message) {
-    const useRAG = useRAGCheckbox ? useRAGCheckbox.checked : true;
-    console.log('💬 通用聊天模式', currentSessionId ? `(继续会话: ${currentSessionId})` : '(新会话)', `RAG: ${useRAG}`);
-
-    const requestBody = {
-        message,
-        use_rag: useRAG
-    };
-
-    // 如果有当前会话ID，包含在请求中以继续会话
-    if (currentSessionId) {
-        requestBody.session_id = currentSessionId;
-    }
-
-    isWaitingForResponse = true;
-
-    try {
-        // 使用流式接口
-        const response = await fetch('/api/v1/chat/general/stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        // 处理流式响应
-        await processGeneralChatStream(response);
-    } finally {
-        isWaitingForResponse = false;
-        hideTypingIndicator();
-        setInputEnabled(true);
-        toggleStopButton(false);
-    }
-}
-
-// 处理通用聊天的流式响应
-async function processGeneralChatStream(response) {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullResponse = '';
-    let messageEl = null;
-    let textEl = null;
-
-    while (true) {
-        // 检查是否已被外部标记为停止
-        if (!isWaitingForResponse) {
-            console.log('🛑 流读取循环被中断');
-            try {
-                await reader.cancel();
-            } catch (e) { }
-            break;
-        }
-
-        const { done, value } = await reader.read();
-
-        if (done) {
-            console.log('✅ 流结束');
-            break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                try {
-                    const event = JSON.parse(line.substring(6));
-
-                    switch (event.type) {
-                        case 'start':
-                            // 更新会话ID
-                            if (event.session_id) {
-                                currentSessionId = event.session_id;
-                                saveSession();
-                                localStorage.setItem('sessionType', 'general');
-                                console.log('新会话ID:', currentSessionId);
-                            }
-                            break;
-
-                        case 'rag_start':
-                            // 显示RAG检索开始
-                            addSystemMessage('🔍 ' + (event.message || '正在检索知识库...'));
-                            break;
-
-                        case 'rag_result':
-                            // 显示RAG检索结果
-                            if (event.count > 0) {
-                                const sources = event.sources ? event.sources.join(', ') : '';
-                                addSystemMessage(`📚 找到 ${event.count} 条相关知识 (来源: ${sources})`);
-                            } else {
-                                addSystemMessage('📭 知识库中未找到相关内容');
-                            }
-                            break;
-
-                        case 'rag_error':
-                            addSystemMessage('⚠️ ' + (event.message || '知识库检索失败'));
-                            break;
-
-                        case 'content':
-                            // 累积响应内容
-                            if (!messageEl) {
-                                // 创建消息元素
-                                messageEl = document.createElement('div');
-                                messageEl.className = 'message assistant-message';
-                                messageEl.innerHTML = `
-                                    <div class="message-avatar">🤖</div>
-                                    <div class="message-content">
-                                        <div class="message-text"></div>
-                                    </div>
-                                `;
-                                messagesContainer.appendChild(messageEl);
-                                textEl = messageEl.querySelector('.message-text');
-                                hideTypingIndicator(); // 隐藏加载指示器
-                            }
-
-                            fullResponse += event.text;
-                            // 使用 marked 解析 Markdown, 但只在每5次更新或流结束时解析，以提高性能（可选优化）
-                            // 这里为了实时性，每次都解析，注意 XSS 风险（marked 默认不开启 sanitize）
-                            // 实际项目中应配置 DOMPurify
-                            textEl.innerHTML = marked.parse(fullResponse);
-                            scrollToBottom();
-                            break;
-
-                        case 'complete':
-                            // 保存完整响应
-                            if (fullResponse) {
-                                saveMessage('assistant', fullResponse);
-                            }
-                            if (event.rag_used) {
-                                console.log('✨ RAG增强已应用');
-                            }
-                            break;
-
-                        case 'error':
-                            addAssistantMessage(`❌ 错误：${event.message}`);
-                            break;
-                    }
-                } catch (e) {
-                    console.error('解析事件失败:', e, line);
-                }
-            }
-        }
-    }
-}
-
-// 处理 SSE 流
 async function processStream(response) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -635,11 +394,20 @@ async function processStream(response) {
 
 // 处理事件
 function handleEvent(event) {
-    console.log('📨 收到事件:', event.type, event);
+    console.log('Received event:', event.type, event);
 
     switch (event.type) {
         case 'start':
             handleStartEvent(event);
+            break;
+        case 'rag_start':
+            handleRagStartEvent(event);
+            break;
+        case 'rag_result':
+            handleRagResultEvent(event);
+            break;
+        case 'rag_error':
+            handleRagErrorEvent(event);
             break;
         case 'tool_start':
             handleToolStartEvent(event);
@@ -647,11 +415,13 @@ function handleEvent(event) {
         case 'tool_result':
             handleToolResultEvent(event);
             break;
+        case 'content':
+            handleContentEvent(event);
+            break;
         case 'ask_user':
             handleAskUserEvent(event);
             break;
         case 'user_answer':
-            // 用户回答已经显示过了，忽略
             break;
         case 'complete':
             handleCompleteEvent(event);
@@ -662,37 +432,36 @@ function handleEvent(event) {
     }
 }
 
-// 处理诊断开始事件
+// ????????
 function handleStartEvent(event) {
-    currentSessionId = event.data.task_id;
-    console.log('会话ID:', currentSessionId);
-
-    currentSessionId = event.data.task_id;
-    console.log('会话ID:', currentSessionId);
-
-    // 保存会话ID到 localStorage
-    saveSession();
-
-    // 如果已经是诊断会话，不需要重复标记
-    // 但如果是从通用会话转换来的，需要更新标记
-    localStorage.setItem('sessionType', 'diagnostic');
-
-    // 创建助手消息容器
-    if (!currentAssistantMessage) {
-        currentAssistantMessage = createAssistantMessage();
+    if (!event.data) {
+        if (event.session_id) {
+            currentSessionId = event.session_id;
+            saveSession();
+            localStorage.setItem('sessionType', 'general');
+            currentAssistantMessage = null;
+            currentToolRunId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+        return;
     }
 
-    // 添加任务信息
-    const taskInfo = `开始诊断任务：${currentSessionId}\n` +
-        `源主机：${event.data.source}\n` +
-        `目标主机：${event.data.target}\n` +
-        `协议：${event.data.protocol}\n` +
-        `端口：${event.data.port || 'N/A'}`;
+    currentSessionId = event.data.task_id;
+    saveSession();
+    localStorage.setItem('sessionType', 'diagnostic');
+    resetStreamingAssistantMessage();
+    currentAssistantMessage = createAssistantMessage();
+    currentToolRunId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const taskInfo = `Task ID: ${currentSessionId}\n` +
+        `Source: ${event.data.source}\n` +
+        `Target: ${event.data.target}\n` +
+        `Protocol: ${event.data.protocol}\n` +
+        `Port: ${event.data.port || 'N/A'}`;
 
     addTextToAssistantMessage(taskInfo);
 }
 
-// 处理工具调用开始事件
+// ??????????
 function handleToolStartEvent(event) {
     if (!currentAssistantMessage) {
         currentAssistantMessage = createAssistantMessage();
@@ -714,41 +483,86 @@ function handleToolResultEvent(event) {
 
 // 处理询问用户事件
 function handleAskUserEvent(event) {
-    // 结束当前助手消息
+    resetStreamingAssistantMessage();
     currentAssistantMessage = null;
 
-    // 创建问题消息
     const questionEl = createQuestionMessage(event.question);
     messagesContainer.appendChild(questionEl);
     scrollToBottom();
 
-    console.log('❓ LLM 询问用户:', event.question);
+    console.log('LLM question:', event.question);
 }
 
-// 处理诊断完成事件
+// ????????
 function handleCompleteEvent(event) {
-    // 结束当前助手消息
+    if (!event.report) {
+        if (currentStreamingText) {
+            saveMessage('assistant', currentStreamingText);
+        }
+        resetStreamingAssistantMessage();
+        currentAssistantMessage = null;
+
+        if (event.session_id) {
+            currentSessionId = event.session_id;
+            saveSession();
+        }
+
+        if (event.rag_used) {
+            console.log('RAG applied');
+        }
+        return;
+    }
+
     currentAssistantMessage = null;
 
-    // 创建最终报告
     const reportEl = createFinalReport(event.report);
     const assistantMsg = createAssistantMessage();
     appendToAssistantMessage(reportEl, assistantMsg);
-
-    // 不重置会话，保持对话记忆
-    // currentSessionId 保持不变，下次输入会继续对话
-
-    console.log('🎉 诊断完成！会话保持活跃，可以继续对话');
 }
 
-// 处理错误事件
+function handleRagStartEvent(event) {
+    addSystemMessage('[RAG] ' + (event.message || 'Searching knowledge base...'));
+}
+
+function handleRagResultEvent(event) {
+    if (event.count > 0) {
+        const sources = event.sources ? event.sources.join(', ') : 'knowledge base';
+        addSystemMessage(`[RAG] Found ${event.count} result(s) from: ${sources}`);
+    } else {
+        addSystemMessage('[RAG] No relevant knowledge found.');
+    }
+}
+
+function handleRagErrorEvent(event) {
+    addSystemMessage('[RAG] ' + (event.message || 'Knowledge retrieval failed.'));
+}
+
+function handleContentEvent(event) {
+    if (!currentStreamingMessage) {
+        currentStreamingMessage = createAssistantMessage();
+        hideTypingIndicator();
+    }
+
+    currentStreamingText += event.text || '';
+    const textEl = currentStreamingMessage.querySelector('.message-text');
+    textEl.innerHTML = marked.parse(currentStreamingText);
+    scrollToBottom();
+}
+
+function resetStreamingAssistantMessage() {
+    currentStreamingMessage = null;
+    currentStreamingText = '';
+}
+
+// ??????
 function handleErrorEvent(event) {
+    resetStreamingAssistantMessage();
     currentAssistantMessage = null;
-    addAssistantMessage(`❌ 错误：${event.message}`);
+    addAssistantMessage(`Error: ${event.message}`);
     currentSessionId = null;
 }
 
-// UI 辅助函数
+// UI ????
 
 function addUserMessage(text, shouldSave = true) {
     const messageEl = document.createElement('div');
@@ -885,8 +699,13 @@ function createToolCallCard(step, toolName, args) {
     const template = document.getElementById('tool-call-template');
     const card = template.content.cloneNode(true);
 
+    if (!currentToolRunId) {
+        currentToolRunId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+    const uniqueId = `tool-${currentToolRunId}-${step}`;
+
     const toolCard = card.querySelector('.tool-call-card');
-    toolCard.id = `tool-${step}`;
+    toolCard.id = uniqueId;
     toolCard.classList.add('status-running');
 
     // 设置工具名称
@@ -910,7 +729,7 @@ function createToolCallCard(step, toolName, args) {
     // 添加点击事件处理折叠/展开
     const header = card.querySelector('.tool-header');
     header.addEventListener('click', () => {
-        const actualCard = document.getElementById(`tool-${step}`);
+        const actualCard = document.getElementById(uniqueId);
         if (actualCard) {
             actualCard.classList.toggle('collapsed');
         }
@@ -988,9 +807,9 @@ function createToolCallCardFromHistory(toolCall) {
 function updateToolCallResult(step, toolName, result, executionTime) {
     console.log('📝 更新工具卡片 - step:', step, 'executionTime:', executionTime);
 
-    const toolCard = document.getElementById(`tool-${step}`);
+    const toolCard = document.getElementById(`tool-${currentToolRunId}-${step}`);
     if (!toolCard) {
-        console.warn('找不到工具卡片:', step);
+        console.warn('找不到工具卡片:', `tool-${currentToolRunId}-${step}`);
         return;
     }
 

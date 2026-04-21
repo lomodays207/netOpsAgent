@@ -139,17 +139,17 @@ class NLU:
             self._validate_extracted_info(extracted_info)
             
             # 额外验证IP地址格式
-            from ..utils.input_validator import is_valid_ip
+            from ..utils.input_validator import is_valid_ip, looks_like_ip
             
             source = extracted_info["source"]
             target = extracted_info["target"]
             
             # 验证源IP格式
-            if not is_valid_ip(source):
+            if looks_like_ip(source) and not is_valid_ip(source):
                 raise ValueError(f"源IP地址格式不正确: {source}。正确格式应为: x.x.x.x (如: 192.168.1.1)")
             
             # 验证目标IP格式
-            if not is_valid_ip(target):
+            if looks_like_ip(target) and not is_valid_ip(target):
                 raise ValueError(f"目标IP地址格式不正确: {target}。正确格式应为: x.x.x.x (如: 192.168.1.1)")
 
             # 构建DiagnosticTask

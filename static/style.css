@@ -559,3 +559,53 @@ body {
         gap: 0.5rem;
     }
 }
+
+/* ===== Markdown 表格样式（在聊天气泡中）===== */
+.message-text table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+    font-size: 0.82rem;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.message-text table th {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.6rem 0.75rem;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.message-text table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+    text-align: center;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.message-text table tr:nth-child(even) td {
+    background-color: #f8f9fa;
+}
+
+.message-text table tr:hover td {
+    background-color: #eef2ff;
+    transition: background 0.15s;
+}
+
+.message-text table tr:last-child td {
+    border-bottom: none;
+}
+
+/* 表格外包裹 - 允许水平滚动 */
+.message-text .table-wrapper,
+.message-text > table {
+    overflow-x: auto;
+    display: block;
+    max-width: 100%;
+}

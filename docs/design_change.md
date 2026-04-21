@@ -513,3 +513,83 @@ class ChromaEmbeddingFunction:
 
 ### 影响范围
 新增独立HTML页面，不影响现有功能。可通过 `http://localhost:8888/architecture_diagram.html` 访问。
+
+---
+
+## [2026-04-17] 新增网络访问关系资产库功能
+
+### 变更背景
+用户需要在聊天窗口中查询应用系统间的网络访问关系，并以表格方式展示；同时需要一个独立的访问关系资产库管理页面，支持查询和新增操作。
+
+### 变更内容
+
+#### 1. 数据库层 (`src/db/database.py`)
+- **新增 `network_access_assets` 表**：存储应用系统间的网络访问关系数据
+  - 字段：`id`, `src_system`, `src_system_name`, `src_deploy_unit`, `src_ip`, `dst_system`, `dst_deploy_unit`, `dst_ip`, `protocol`, `port`, `created_at`, `updated_at`
+- **新增 CRUD 方法**：
+  - `create_access_asset()`: 新增一条记录
+  - `query_access_assets()`: 多条件查询（源系统/目标系统/关键词/协议）+ 分页
+  - `delete_access_asset()`: 删除指定ID的记录
+  - `seed_access_assets_if_empty()`: 首次启动时自动填充 10 条 Mock 示例数据（幂等）
+
+#### 2. API 层 (`src/api.py`)
+- **启动时自动初始化 Mock 数据**：`startup_event` 中调用 `seed_access_assets_if_empty()`
+- **新增 4 个 REST 接口**：
+  - `GET /api/v1/assets/access-relations`：查询列表（多条件+分页）
+  - `POST /api/v1/assets/access-relations`：新增一条记录
+  - `DELETE /api/v1/assets/access-relations/{asset_id}`：删除一条记录
+  - `GET /api/v1/assets/access-relations/chat-query`：聊天专用查询（返回 Markdown 表格字符串）
+- **更新通用聊天系统提示词**：增加访问关系查询的能力描述
+
+#### 3. 前端聊天窗口 (`static/app.js`, `static/style.css`)
+- **意图识别增强 (`app.js`)**：在 `handleSubmit` 中优先检测"访问关系查询"意图
+  - 关键词模式：`访问关系`, `N-AQM`, `N-CRM` 等系统代码、中文系统名等
+  - 识别到后调用 `queryAccessRelation()` 函数
+- **新增 `queryAccessRelation()` 函数**：智能提取关键词 → 调用 `chat-query` 接口 → 渲染 Markdown 表格
+- **新增 `extractAccessRelationKeyword()` 函数**：从用户消息中提取搜索关键词（优先系统代码，其次中文关键词）
+- **Markdown 表格样式 (`style.css`)**：聊天气泡中的表格样式（渐变表头、条纹行、悬停高亮）
+
+#### 4. 新增访问关系资产库管理页面
+- **`static/access_assets.html`**：完整管理页面
+  - 渐变顶部导航（含返回按钮）
+  - 4个搜索过滤字段（源系统、目标系统、关键词、协议）
+  - 分页数据表格（系统代码标签、协议徽章、IP单元格）
+  - 新增记录弹框（分源端/目的端/网络参数三组）
+  - 删除确认弹框
+- **`static/access_assets.css`**：页面专用样式
+  - 现代化设计：Inter 字体、渐变色卡片、50px 圆角按钮
+  - 表格分组样式、协议徽章（绿色/橙色/蓝色）
+  - 弹框动画、Toast 消息提示
+- **`static/access_assets.js`**：完整交互逻辑
+  - 数据加载、表格渲染、分页渲染
+  - 表单验证、异步 API 调用
+  - Toast 提示（成功/失败）
+
+#### 5. 导航更新 (`static/index.html`)
+- 页脚新增"🔗 访问关系资产库"链接
+
+#### 6. 单元测试 (`tests/test_access_assets.py`)
+- **14 个测试用例**，覆盖：
+  - 创建记录（正常/仅必填字段）
+  - 多维度查询过滤（按源系统代码、中文名、关键词、协议）
+  - 分页功能
+  - 删除（存在/不存在的记录）
+  - Mock 数据种子（正常插入/幂等性）
+  - API 端点可访问性测试
+
+### Mock 数据说明
+根据用户提供的实际示例图片，预置了 10 条访问关系记录，包括：
+- N-AQM（金融资产质量管理）→ P-ZH-DMP-CONF 的 7 条访问记录
+- N-CRM（客户关系管理系统）→ N-AQM 和 P-DB-MAIN 的 2 条记录
+- N-OA（办公自动化系统）→ N-CRM 的 1 条记录
+
+### 验证结果
+- ✅ 14 个单元测试全部通过
+- ✅ `src/db/database.py` 和 `src/api.py` 语法检查通过
+- ✅ 聊天窗口意图识别逻辑更新
+- ✅ 访问关系资产库管理页面完整实现
+
+### 影响范围
+- 新增数据库表，不破坏现有 sessions/messages 表结构
+- 新增 API 端点，不影响现有接口
+- 聊天意图识别优先级调整（访问关系查询 > 诊断 > 通用聊天）

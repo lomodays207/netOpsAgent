@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络访问关系资产库 - netOpsAgent</title>
+    <meta name="description" content="管理应用系统间的网络访问关系资产，支持查询、新增和删除操作">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/access_assets.css">
+</head>
+
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="page-header">
+        <div class="header-inner">
+            <div class="header-left">
+                <a href="/" class="back-btn" title="返回聊天">
+                    <span>←</span>
+                </a>
+                <div class="header-title">
+                    <span class="header-icon">🔗</span>
+                    <div>
+                        <h1>网络访问关系资产库</h1>
+                        <p class="header-subtitle">管理应用系统间的网络访问关系</p>
+                    </div>
+                </div>
+            </div>
+            <button class="add-btn" id="add-btn" onclick="openAddModal()">
+                <span>＋</span> 新增访问关系
+            </button>
+        </div>
+    </header>
+
+    <main class="page-main">
+        <!-- 搜索过滤区 -->
+        <section class="filter-card">
+            <div class="filter-grid">
+                <div class="filter-item">
+                    <label for="filter-src">源物理子系统</label>
+                    <input type="text" id="filter-src" placeholder="系统代码或中文名..." autocomplete="off">
+                </div>
+                <div class="filter-item">
+                    <label for="filter-dst">目的物理子系统</label>
+                    <input type="text" id="filter-dst" placeholder="目标系统代码..." autocomplete="off">
+                </div>
+                <div class="filter-item">
+                    <label for="filter-keyword">全局关键词</label>
+                    <input type="text" id="filter-keyword" placeholder="IP、系统名..." autocomplete="off">
+                </div>
+                <div class="filter-item">
+                    <label for="filter-protocol">协议</label>
+                    <select id="filter-protocol">
+                        <option value="">全部协议</option>
+                        <option value="TCP">TCP</option>
+                        <option value="UDP">UDP</option>
+                        <option value="HTTPS">HTTPS</option>
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button class="btn-search" id="search-btn" onclick="doSearch()">🔍 查询</button>
+                    <button class="btn-reset" id="reset-btn" onclick="resetSearch()">↺ 重置</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 统计信息栏 -->
+        <div class="stats-bar">
+            <span id="stats-total" class="stat-item">共 <strong>0</strong> 条记录</span>
+            <span id="stats-page" class="stat-item">第 <strong>1</strong> 页</span>
+        </div>
+
+        <!-- 数据表格 -->
+        <section class="table-card">
+            <div class="table-scroll">
+                <table id="assets-table">
+                    <thead>
+                        <tr>
+                            <th>源物理子系统</th>
+                            <th>源系统名称</th>
+                            <th>源部署单元</th>
+                            <th>源IP地址</th>
+                            <th>目的物理子系统</th>
+                            <th>目的部署单元</th>
+                            <th>目的IP</th>
+                            <th>协议</th>
+                            <th>端口</th>
+                            <th class="col-action">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="assets-tbody">
+                        <tr class="loading-row">
+                            <td colspan="10">
+                                <div class="loading-spinner">
+                                    <div class="spinner"></div>
+                                    <span>数据加载中...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination" id="pagination"></div>
+        </section>
+    </main>
+
+    <!-- 新增访问关系弹框 -->
+    <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>✚ 新增访问关系记录</h2>
+                <button class="modal-close" onclick="closeAddModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="add-form" onsubmit="submitAddForm(event)">
+                    <div class="form-section">
+                        <h3 class="form-section-title">🖥 源端信息</h3>
+                        <div class="form-grid">
+                            <div class="form-group required">
+                                <label for="f-src-system">源物理子系统（代码）</label>
+                                <input type="text" id="f-src-system" placeholder="如：N-AQM" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-src-system-name">源系统中文名</label>
+                                <input type="text" id="f-src-system-name" placeholder="如：金融资产质量管理">
+                            </div>
+                            <div class="form-group">
+                                <label for="f-src-deploy-unit">源部署单元_属性</label>
+                                <input type="text" id="f-src-deploy-unit" placeholder="如：AQMJS_AP">
+                            </div>
+                            <div class="form-group">
+                                <label for="f-src-ip">源IP地址</label>
+                                <textarea id="f-src-ip" rows="2" placeholder="如：10.37.1.116&#10;10.37.1.20（多个换行分隔）"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">🎯 目的端信息</h3>
+                        <div class="form-grid">
+                            <div class="form-group required">
+                                <label for="f-dst-system">目的物理子系统（代码）</label>
+                                <input type="text" id="f-dst-system" placeholder="如：P-ZH-DMP-CONF" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-dst-deploy-unit">目的部署单元_属性</label>
+                                <input type="text" id="f-dst-deploy-unit" placeholder="如：ADDNG_WB">
+                            </div>
+                            <div class="form-group">
+                                <label for="f-dst-ip">目的IP地址</label>
+                                <input type="text" id="f-dst-ip" placeholder="如：10.87.28.127">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="form-section-title">🔌 网络参数</h3>
+                        <div class="form-grid form-grid-2">
+                            <div class="form-group">
+                                <label for="f-protocol">协议</label>
+                                <select id="f-protocol">
+                                    <option value="TCP">TCP</option>
+                                    <option value="UDP">UDP</option>
+                                    <option value="HTTPS">HTTPS</option>
+                                    <option value="HTTP">HTTP</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-port">端口</label>
+                                <textarea id="f-port" rows="2" placeholder="如：8080&#10;8900（多个换行分隔）"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeAddModal()">取消</button>
+                <button class="btn-submit" id="submit-btn" onclick="submitAddForm(event)">✓ 保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除确认弹框 -->
+    <div class="modal-overlay" id="delete-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal-box modal-sm">
+            <div class="modal-header">
+                <h2>⚠️ 确认删除</h2>
+                <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p id="delete-confirm-text">确定要删除这条访问关系记录吗？此操作不可撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeDeleteModal()">取消</button>
+                <button class="btn-danger" id="confirm-delete-btn" onclick="confirmDelete()">🗑 确认删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script src="/static/access_assets.js?v=1.0"></script>
+</body>
+
+</html>

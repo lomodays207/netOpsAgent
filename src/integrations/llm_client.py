@@ -5,7 +5,7 @@ LLM客户端
 """
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -89,6 +89,25 @@ class LLMClient:
             max_tokens=max_tokens,
             timeout=self.timeout,
             max_retries=0  # 我们自己实现重试逻辑
+        )
+
+    def _create_llm(
+        self,
+        temperature: float = None,
+        max_tokens: int = None
+    ) -> ChatOpenAI:
+        """Create a ChatOpenAI instance using defaults plus optional overrides."""
+        if temperature is None and max_tokens is None:
+            return self.llm
+
+        return ChatOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model=self.model,
+            temperature=temperature if temperature is not None else self.default_temperature,
+            max_tokens=max_tokens if max_tokens is not None else self.default_max_tokens,
+            timeout=self.timeout,
+            max_retries=0
         )
 
     def _classify_error(self, error: Exception) -> Exception:
@@ -390,3 +409,33 @@ class LLMClient:
             return result
 
         return self._retry_with_backoff(_invoke_with_tools)
+
+    def invoke_langchain_messages(
+        self,
+        messages: List[Any],
+        temperature: float = None,
+        max_tokens: int = None
+    ) -> Any:
+        """Invoke the model with prebuilt LangChain messages."""
+        llm = self._create_llm(temperature=temperature, max_tokens=max_tokens)
+
+        def _invoke_messages():
+            return llm.invoke(messages)
+
+        return self._retry_with_backoff(_invoke_messages)
+
+    def invoke_langchain_messages_with_tools(
+        self,
+        messages: List[Any],
+        tools: List[Tool],
+        temperature: float = None,
+        max_tokens: int = None
+    ) -> Any:
+        """Invoke the model with prebuilt LangChain messages and bound tools."""
+        llm = self._create_llm(temperature=temperature, max_tokens=max_tokens)
+        llm_with_tools = llm.bind_tools(tools)
+
+        def _invoke_messages_with_tools():
+            return llm_with_tools.invoke(messages)
+
+        return self._retry_with_backoff(_invoke_messages_with_tools)

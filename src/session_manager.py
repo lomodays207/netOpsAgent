@@ -209,8 +209,10 @@ class SQLiteSessionManager(SessionManager):
             llm_client = rebuild_llm_client(session_data['llm_config'])
 
             # 重建 Agent 并恢复 context
-            agent = LLMAgent(llm_client=llm_client)
-            agent.current_context = context  # 恢复上下文
+            agent = None
+            if llm_client is not None:
+                agent = LLMAgent(llm_client=llm_client)
+                agent.current_context = context  # ?????
 
             # 从数据库加载消息历史
             messages_data = await self.db.get_messages(session_id)
