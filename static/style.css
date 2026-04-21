@@ -156,6 +156,92 @@ body {
     font-size: 0.9em;
 }
 
+.welcome-message .message-text {
+    max-width: min(85%, 760px);
+}
+
+.quick-prompts-section {
+    margin: 0 0 1.5rem 3.25rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #dbeafe;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08);
+}
+
+.quick-prompts-header {
+    margin-bottom: 1rem;
+}
+
+.quick-prompts-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1d4ed8;
+}
+
+.quick-prompts-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.quick-prompt-groups {
+    display: grid;
+    gap: 1rem;
+}
+
+.quick-prompt-group-title {
+    margin-bottom: 0.75rem;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #334155;
+}
+
+.quick-prompt-card-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.quick-prompt-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.9rem;
+    background: white;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.quick-prompt-card:hover {
+    transform: translateY(-2px);
+    border-color: #60a5fa;
+    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
+}
+
+.quick-prompt-card:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.quick-prompt-card-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.quick-prompt-card-description {
+    margin-top: 0.35rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #475569;
+}
+
 /* 打字指示器 */
 .typing-indicator {
     display: flex;
@@ -552,6 +638,15 @@ body {
 
     .message-text {
         max-width: 90%;
+    }
+
+    .quick-prompts-section {
+        margin-left: 0;
+        padding: 1rem;
+    }
+
+    .quick-prompt-card-list {
+        grid-template-columns: 1fr;
     }
 
     .input-options {

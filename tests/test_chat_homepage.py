@@ -45,3 +45,14 @@ def test_app_js_bootstraps_initial_state_and_new_chat_path():
     assert "function fillPromptTemplate(template)" in app_js
     assert "function startNewChat()" in app_js
     assert "hideQuickPrompts();" in app_js
+
+
+def test_style_css_contains_quick_prompt_layout_rules():
+    css = read_static_file("style.css")
+
+    assert ".quick-prompts-section" in css
+    assert ".quick-prompts-header" in css
+    assert ".quick-prompt-group-title" in css
+    assert ".quick-prompt-card-list" in css
+    assert ".quick-prompt-card:hover" in css
+    assert "grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));" in css
