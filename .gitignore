@@ -175,3 +175,6 @@ runtime/knowledge_base/
 .claude/
 .gemini/
 .agent/
+
+# Local git worktrees
+.worktrees/
