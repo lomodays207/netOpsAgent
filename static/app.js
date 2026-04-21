@@ -6,6 +6,69 @@ let currentStreamingMessage = null;
 let currentStreamingText = '';
 let currentToolRunId = null;
 
+const QUICK_PROMPTS = [
+    {
+        category: '故障诊断',
+        items: [
+            {
+                title: '源到目标端口不通',
+                description: '排查网络路径、防火墙、ACL 和服务监听',
+                template: '请帮我分析为什么 10.0.1.10 到 10.0.2.20 的 80 端口不通。'
+            },
+            {
+                title: '主机间网络不通',
+                description: '检查连通性、路由和安全策略',
+                template: '请帮我分析为什么 10.0.1.10 无法访问 10.0.2.20。'
+            },
+            {
+                title: '服务监听异常',
+                description: '确认端口监听、进程状态和主机防火墙',
+                template: '请帮我检查 XX 主机上的 XX 服务是否正常监听目标端口。'
+            }
+        ]
+    },
+    {
+        category: '访问关系',
+        items: [
+            {
+                title: '查询系统访问关系清单',
+                description: '查看某系统的上下游访问关系',
+                template: '请查询 XX 系统的访问关系清单，包括源系统、目标系统、协议、端口和访问方向。'
+            },
+            {
+                title: '查询主机访问关系',
+                description: '按 IP 查看与其他资产的访问关系',
+                template: '请查询 IP 为 10.0.1.10 的主机有哪些访问关系。'
+            },
+            {
+                title: '查询两个系统是否已开通',
+                description: '确认系统间是否已有访问放通记录',
+                template: '请帮我查询 XX 系统到 XX 系统之间是否已经开通访问关系。'
+            }
+        ]
+    },
+    {
+        category: '权限提单',
+        items: [
+            {
+                title: '访问关系如何开通提单',
+                description: '查看权限、流程和必填信息',
+                template: '访问关系如何进行开通提单？需要哪些权限、审批节点和必填信息？'
+            },
+            {
+                title: '提单需要准备什么',
+                description: '提前准备源目地址、端口和用途说明',
+                template: '开通访问关系前需要准备哪些信息，例如源 IP、目标 IP、端口、协议和用途说明？'
+            },
+            {
+                title: '谁有权限提单',
+                description: '确认申请角色和审批边界',
+                template: '哪些角色有权限发起访问关系开通提单？审批边界是什么？'
+            }
+        ]
+    }
+];
+
 // DOM 元素
 const form = document.getElementById('chat-form');
 const userInput = document.getElementById('user-input');
@@ -15,13 +78,13 @@ const messagesContainer = document.getElementById('messages-container');
 const useLLMCheckbox = document.getElementById('use-llm');
 const useRAGCheckbox = document.getElementById('use-rag');
 const verboseCheckbox = document.getElementById('verbose');
+const welcomeMessageTemplate = document.getElementById('welcome-message-template');
+const quickPromptsTemplate = document.getElementById('quick-prompts-template');
+const quickPromptCardTemplate = document.getElementById('quick-prompt-card-template');
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('🤖 AI 网络访问关系智能助手已加载');
-
-    // 恢复会话（如果存在）
-    restoreSession();
 
     // 自动调整文本框高度
     userInput.addEventListener('input', autoResizeTextarea);
@@ -42,6 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 停止按钮
     stopBtn.addEventListener('click', stopGeneration);
+
+    const restored = await restoreSession();
+    if (!restored) {
+        renderInitialState();
+    }
 });
 
 // 恢复会话
@@ -53,35 +121,45 @@ async function restoreSession() {
     if (urlSessionId) {
         // 从 URL 加载会话
         console.log('📥 从 URL 加载会话:', urlSessionId);
-        await loadSessionFromServer(urlSessionId);
+        const restored = await loadSessionFromServer(urlSessionId);
         // 清除 URL 参数（可选，保持 URL 干净）
         window.history.replaceState({}, document.title, '/');
-        return;
+        return restored;
     }
 
     // 否则尝试从 localStorage 恢复
     const savedSessionId = localStorage.getItem('currentSessionId');
     const savedMessages = localStorage.getItem('chatMessages');
 
-    if (savedSessionId && savedMessages) {
-        currentSessionId = savedSessionId;
+    if (!savedSessionId || !savedMessages) {
+        return false;
+    }
 
-        try {
-            const messages = JSON.parse(savedMessages);
-            messages.forEach(msg => {
-                if (msg.role === 'user') {
-                    addUserMessage(msg.content, false); // false = 不保存到 localStorage
-                } else if (msg.role === 'assistant') {
-                    addAssistantMessage(msg.content, false);
-                }
-            });
+    currentSessionId = savedSessionId;
+    messagesContainer.innerHTML = '';
 
-            console.log('✅ 会话已恢复:', currentSessionId);
-            addSystemMessage(`会话已恢复 (ID: ${currentSessionId.substring(0, 20)}...)`);
-        } catch (e) {
-            console.error('恢复会话失败:', e);
+    try {
+        const messages = JSON.parse(savedMessages);
+        if (!Array.isArray(messages) || messages.length === 0) {
             clearSession();
+            return false;
         }
+
+        messages.forEach(msg => {
+            if (msg.role === 'user') {
+                addUserMessage(msg.content, false); // false = 不保存到 localStorage
+            } else if (msg.role === 'assistant') {
+                addAssistantMessage(msg.content, false);
+            }
+        });
+
+        console.log('✅ 会话已恢复:', currentSessionId);
+        addSystemMessage(`会话已恢复 (ID: ${currentSessionId.substring(0, 20)}...)`);
+        return true;
+    } catch (e) {
+        console.error('恢复会话失败:', e);
+        clearSession();
+        return false;
     }
 }
 
@@ -100,6 +178,8 @@ async function loadSessionFromServer(sessionId) {
         }
 
         const messages = await response.json();
+
+        messagesContainer.innerHTML = '';
 
         // 设置当前会话ID
         currentSessionId = sessionId;
@@ -154,9 +234,11 @@ async function loadSessionFromServer(sessionId) {
 
         console.log('✅ 会话已从服务器加载:', sessionId);
         addSystemMessage(`会话已加载，可以继续对话 (ID: ${sessionId.substring(0, 20)}...)`);
+        return true;
     } catch (error) {
         console.error('加载会话失败:', error);
-        addSystemMessage(`❌ 加载会话失败: ${error.message}`);
+        clearSession();
+        return false;
     }
 }
 
@@ -185,11 +267,100 @@ function saveMessage(role, content) {
 // 清除会话
 function clearSession() {
     currentSessionId = null;
+    currentAssistantMessage = null;
+    currentToolRunId = null;
+    isWaitingForResponse = false;
+    resetStreamingAssistantMessage();
     localStorage.removeItem('currentSessionId');
     localStorage.removeItem('chatMessages');
     localStorage.removeItem('sessionType');  // 清除会话类型
     messagesContainer.innerHTML = '';
     console.log('🗑️ 会话已清除');
+}
+
+function renderInitialState() {
+    messagesContainer.innerHTML = '';
+    messagesContainer.appendChild(createWelcomeMessage());
+    showQuickPrompts();
+    scrollToBottom();
+}
+
+function createWelcomeMessage() {
+    return welcomeMessageTemplate.content.cloneNode(true).firstElementChild;
+}
+
+function renderQuickPrompts() {
+    if (!Array.isArray(QUICK_PROMPTS) || QUICK_PROMPTS.length === 0) {
+        return null;
+    }
+
+    const fragment = quickPromptsTemplate.content.cloneNode(true);
+    const section = fragment.querySelector('#quick-prompts-section');
+    const groupsContainer = fragment.querySelector('.quick-prompt-groups');
+
+    QUICK_PROMPTS.forEach(group => {
+        const items = Array.isArray(group.items) ? group.items : [];
+        const validItems = items.filter(item => item.template);
+        if (validItems.length === 0) {
+            return;
+        }
+
+        const groupEl = document.createElement('section');
+        groupEl.className = 'quick-prompt-group';
+
+        const titleEl = document.createElement('h3');
+        titleEl.className = 'quick-prompt-group-title';
+        titleEl.textContent = group.category;
+
+        const cardsEl = document.createElement('div');
+        cardsEl.className = 'quick-prompt-card-list';
+
+        validItems.forEach(item => {
+            const cardFragment = quickPromptCardTemplate.content.cloneNode(true);
+            const card = cardFragment.querySelector('.quick-prompt-card');
+            card.querySelector('.quick-prompt-card-title').textContent = item.title;
+            card.querySelector('.quick-prompt-card-description').textContent = item.description;
+            card.addEventListener('click', () => fillPromptTemplate(item.template));
+            cardsEl.appendChild(card);
+        });
+
+        groupEl.appendChild(titleEl);
+        groupEl.appendChild(cardsEl);
+        groupsContainer.appendChild(groupEl);
+    });
+
+    return groupsContainer.childElementCount > 0 ? section : null;
+}
+
+function showQuickPrompts() {
+    hideQuickPrompts();
+    const section = renderQuickPrompts();
+    if (section) {
+        messagesContainer.appendChild(section);
+    }
+}
+
+function hideQuickPrompts() {
+    const section = document.getElementById('quick-prompts-section');
+    if (section) {
+        section.remove();
+    }
+}
+
+function fillPromptTemplate(template) {
+    userInput.value = template;
+    autoResizeTextarea();
+    userInput.focus();
+}
+
+function startNewChat() {
+    clearSession();
+    userInput.value = '';
+    autoResizeTextarea();
+    setInputEnabled(true);
+    toggleStopButton(false);
+    stopBtn.disabled = false;
+    renderInitialState();
 }
 
 // 添加"新对话"按钮
@@ -214,8 +385,7 @@ function addNewChatButton() {
     `;
     newChatBtn.addEventListener('click', () => {
         if (confirm('确定要开始新对话吗？当前对话将被清除。')) {
-            clearSession();
-            addSystemMessage('已开始新对话');
+            startNewChat();
         }
     });
     header.style.position = 'relative';
@@ -255,6 +425,7 @@ async function handleSubmit(e) {
         return;
     }
 
+    hideQuickPrompts();
     addUserMessage(message);
     userInput.value = '';
     autoResizeTextarea();
