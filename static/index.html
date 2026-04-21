@@ -17,19 +17,7 @@
 
         <main class="chat-main">
             <!-- 消息列表 -->
-            <div class="messages-container" id="messages-container">
-                <!-- 欢迎消息 -->
-                <div class="message assistant-message">
-                    <div class="message-avatar">🤖</div>
-                    <div class="message-content">
-                        <div class="message-text">
-                            你好！我是 AI 网络访问关系智能助手。请描述你遇到的网络故障，我会帮你分析根本原因。
-                            <br><br>
-                            例如：<code>10.0.1.10到10.0.2.20端口80不通</code>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <div class="messages-container" id="messages-container"></div>
 
             <!-- 输入区域 -->
             <div class="input-container">
@@ -66,6 +54,36 @@
                     聊天记录</a> | <a href="/static/knowledge.html">📖 知识库管理</a> | <a href="/static/access_assets.html">🔗 访问关系资产库</a></p>
         </footer>
     </div>
+
+    <template id="welcome-message-template">
+        <div class="message assistant-message welcome-message">
+            <div class="message-avatar">🤖</div>
+            <div class="message-content">
+                <div class="message-text">
+                    你好！我是 AI 网络访问关系智能助手。请描述你遇到的网络故障，我会帮你分析根本原因。
+                    <br><br>
+                    例如：<code>10.0.1.10到10.0.2.20端口80不通</code>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="quick-prompts-template">
+        <section class="quick-prompts-section" id="quick-prompts-section">
+            <div class="quick-prompts-header">
+                <h2 class="quick-prompts-title">猜你想问</h2>
+                <p class="quick-prompts-subtitle">点击即可填入输入框，可继续补充具体 IP、端口、系统名称</p>
+            </div>
+            <div class="quick-prompt-groups"></div>
+        </section>
+    </template>
+
+    <template id="quick-prompt-card-template">
+        <button type="button" class="quick-prompt-card">
+            <span class="quick-prompt-card-title"></span>
+            <span class="quick-prompt-card-description"></span>
+        </button>
+    </template>
 
     <!-- 加载指示器模板 -->
     <template id="loading-template">
