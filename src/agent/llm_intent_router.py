@@ -22,6 +22,8 @@ MAX_MESSAGE_CHARS = 1000
 MAX_RECENT_MESSAGE_CHARS = 500
 MAX_RECENT_MESSAGES = 5
 MAX_SIGNAL_VALUE_CHARS = 500
+MAX_REASON_CHARS = 200
+MAX_CLARIFY_MESSAGE_CHARS = 500
 
 AllowedRoute = Literal[
     "start_diagnosis",
@@ -108,8 +110,11 @@ class LLMIntentClassifier:
         return LLMIntentResult(
             route=payload.route,
             confidence=payload.confidence,
-            reason=payload.reason,
-            clarify_message=payload.clarify_message,
+            reason=self._truncate_text(payload.reason, MAX_REASON_CHARS),
+            clarify_message=self._truncate_optional_text(
+                payload.clarify_message,
+                MAX_CLARIFY_MESSAGE_CHARS,
+            ),
             needs_more_detail=payload.needs_more_detail,
             detected_signals=payload.detected_signals,
         )
@@ -172,6 +177,11 @@ class LLMIntentClassifier:
     def _truncate_text(self, value: Any, max_chars: int) -> str:
         text = "" if value is None else str(value)
         return text[:max_chars]
+
+    def _truncate_optional_text(self, value: Any, max_chars: int) -> Optional[str]:
+        if value is None:
+            return None
+        return self._truncate_text(value, max_chars)
 
     def _sanitize_signal_value(self, value: Any) -> Any:
         if isinstance(value, (bool, int, float)) or value is None:

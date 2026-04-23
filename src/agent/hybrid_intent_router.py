@@ -13,6 +13,8 @@ from .rule_intent_router import RuleIntentRouter
 
 logger = logging.getLogger(__name__)
 MESSAGE_PREVIEW_LIMIT = 120
+MAX_DECISION_REASON_CHARS = 200
+MAX_DECISION_CLARIFY_MESSAGE_CHARS = 500
 
 
 class HybridIntentRouter:
@@ -136,8 +138,14 @@ class HybridIntentRouter:
         return IntentDecision(
             route=getattr(llm_result, "route", "general_chat"),
             confidence=float(getattr(llm_result, "confidence", 0.0) or 0.0),
-            reason=getattr(llm_result, "reason", ""),
-            clarify_message=getattr(llm_result, "clarify_message", None),
+            reason=self._truncate_text(
+                getattr(llm_result, "reason", ""),
+                MAX_DECISION_REASON_CHARS,
+            ),
+            clarify_message=self._truncate_optional_text(
+                getattr(llm_result, "clarify_message", None),
+                MAX_DECISION_CLARIFY_MESSAGE_CHARS,
+            ),
         )
 
     def _clarify_decision(self, rule_result: RuleIntentResult) -> IntentDecision:
@@ -185,20 +193,24 @@ class HybridIntentRouter:
         if not self.log_decisions:
             return
 
+        rule_reason = self._preview_field(rule_result.reason)
+        llm_reason = self._preview_field(getattr(llm_result, "reason", None))
         log_payload = {
             "message_preview": self._preview_message(message),
             "message_length": len("" if message is None else str(message)),
             "rule": {
                 "route": rule_result.route,
                 "certainty": rule_result.certainty,
-                "reason": rule_result.reason,
+                "reason_preview": rule_reason["preview"],
+                "reason_length": rule_reason["length"],
             },
             "llm": None
             if llm_result is None
             else {
                 "route": getattr(llm_result, "route", None),
                 "confidence": getattr(llm_result, "confidence", None),
-                "reason": getattr(llm_result, "reason", None),
+                "reason_preview": llm_reason["preview"],
+                "reason_length": llm_reason["length"],
             },
             "final_route": final_decision.route,
             "fallback_reason": fallback_reason,
@@ -208,3 +220,19 @@ class HybridIntentRouter:
     def _preview_message(self, message: Any) -> str:
         text = "" if message is None else str(message)
         return text[:MESSAGE_PREVIEW_LIMIT]
+
+    def _preview_field(self, value: Any) -> dict[str, Any]:
+        text = "" if value is None else str(value)
+        return {
+            "preview": text[:MESSAGE_PREVIEW_LIMIT],
+            "length": len(text),
+        }
+
+    def _truncate_text(self, value: Any, max_chars: int) -> str:
+        text = "" if value is None else str(value)
+        return text[:max_chars]
+
+    def _truncate_optional_text(self, value: Any, max_chars: int) -> Optional[str]:
+        if value is None:
+            return None
+        return self._truncate_text(value, max_chars)

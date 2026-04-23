@@ -233,3 +233,33 @@ def test_agent_package_lazy_exports_hybrid_router_without_eager_imports():
     lines = completed.stdout.strip().splitlines()
     assert lines[0] == "False False"
     assert lines[1] == "True"
+
+
+def test_log_decision_truncates_llm_reason_and_final_reason(caplog):
+    sensitive_tail = " SENSITIVE_LLM_REASON_TAIL"
+    long_reason = "r" * 220 + sensitive_tail
+    rule_result = make_rule_result(
+        route="general_chat",
+        confidence=0.78,
+        reason="general_network_question",
+        certainty="soft",
+        signals={"has_question_style": True},
+    )
+    router = HybridIntentRouter(
+        rule_router=FakeRuleRouter(rule_result),
+        llm_classifier=FakeLLMClassifier(
+            IntentDecision(route="general_chat", confidence=0.95, reason=long_reason)
+        ),
+        log_decisions=True,
+    )
+
+    with caplog.at_level("INFO", logger="src.agent.hybrid_intent_router"):
+        decision = router.route_message("how do I check port 3306?")
+
+    log_text = "\n".join(caplog.messages)
+    assert len(decision.reason) == 200
+    assert sensitive_tail not in decision.reason
+    assert sensitive_tail not in log_text
+    assert "reason_preview" in log_text
+    assert "reason_length" in log_text
+    assert '"reason":' not in log_text

@@ -230,3 +230,33 @@ def test_build_prompt_truncates_rule_result_signal_string_values():
     assert signals["tuple_items"] == ["z" * 500]
     assert signals["has_question_style"] is True
     assert signals["score"] == 0.5
+
+
+def test_classify_truncates_verbose_output_fields():
+    reason = "r" * 250 + " SENSITIVE_REASON_TAIL"
+    clarify_message = "c" * 550 + " SENSITIVE_CLARIFY_TAIL"
+    llm_client = FakeLLMClient(
+        json.dumps(
+            {
+                "route": "clarify",
+                "confidence": 0.88,
+                "reason": reason,
+                "clarify_message": clarify_message,
+                "needs_more_detail": True,
+            },
+            ensure_ascii=False,
+        )
+    )
+    classifier = LLMIntentClassifier(llm_client=llm_client)
+
+    result = classifier.classify(
+        message="port issue",
+        session=None,
+        recent_messages=[],
+        rule_result=make_rule_result(),
+    )
+
+    assert len(result.reason) == 200
+    assert "SENSITIVE_REASON_TAIL" not in result.reason
+    assert len(result.clarify_message) == 500
+    assert "SENSITIVE_CLARIFY_TAIL" not in result.clarify_message
