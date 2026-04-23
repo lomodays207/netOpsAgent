@@ -5,7 +5,7 @@ Agent核心模块
 """
 from .analyzer import DiagnosticAnalyzer
 from .executor import Executor
-from .intent_router import IntentRouter
+from .intent_router import IntentRouter, RuleIntentRouter
 from .nlu import NLU
 from .planner import TaskPlanner
 from .reporter import ReportGenerator
@@ -16,5 +16,6 @@ __all__ = [
     "DiagnosticAnalyzer",
     "ReportGenerator",
     "IntentRouter",
+    "RuleIntentRouter",
     "NLU",
 ]
