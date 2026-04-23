@@ -1,0 +1,92 @@
+import pytest
+
+from src.agent.intent_types import RuleIntentResult
+from src.agent.llm_intent_router import (
+    LLMIntentClassificationError,
+    LLMIntentClassifier,
+)
+
+
+class FakeLLMClient:
+    def __init__(self, response: str):
+        self.response = response
+        self.calls = []
+
+    def invoke_with_json(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.response
+
+
+def make_rule_result():
+    return RuleIntentResult(
+        route="general_chat",
+        confidence=0.78,
+        reason="general_network_question",
+        certainty="soft",
+        signals={"has_question_style": True},
+    )
+
+
+def test_classify_valid_json_returns_llm_intent_result():
+    llm_client = FakeLLMClient(
+        """{
+            "route": "general_chat",
+            "confidence": 0.88,
+            "reason": "question_style_general_network_topic",
+            "detected_signals": {"has_question_style": true}
+        }"""
+    )
+    classifier = LLMIntentClassifier(llm_client=llm_client, temperature=0.0)
+
+    result = classifier.classify(
+        message="端口不通怎么排查？",
+        session=None,
+        recent_messages=[
+            {"role": "user", "content": "old-1"},
+            {"role": "assistant", "content": "old-2"},
+            {"role": "user", "content": "old-3"},
+            {"role": "assistant", "content": "old-4"},
+            {"role": "user", "content": "old-5"},
+            {"role": "assistant", "content": "old-6"},
+        ],
+        rule_result=make_rule_result(),
+    )
+
+    assert result.route == "general_chat"
+    assert result.confidence == 0.88
+    assert result.detected_signals["has_question_style"] is True
+    assert llm_client.calls[0]["temperature"] == 0.0
+    assert "old-1" not in llm_client.calls[0]["prompt"]
+    assert "old-2" in llm_client.calls[0]["prompt"]
+    assert "required_output_keys" in llm_client.calls[0]["prompt"]
+
+
+def test_classify_invalid_json_raises_classification_error():
+    classifier = LLMIntentClassifier(llm_client=FakeLLMClient("not json"))
+
+    with pytest.raises(LLMIntentClassificationError):
+        classifier.classify(
+            message="端口不通怎么排查？",
+            session=None,
+            recent_messages=[],
+            rule_result=make_rule_result(),
+        )
+
+
+def test_classify_unknown_route_raises_classification_error():
+    llm_client = FakeLLMClient(
+        """{
+            "route": "diagnose_now",
+            "confidence": 0.88,
+            "reason": "unknown_route"
+        }"""
+    )
+    classifier = LLMIntentClassifier(llm_client=llm_client)
+
+    with pytest.raises(LLMIntentClassificationError):
+        classifier.classify(
+            message="端口不通怎么排查？",
+            session=None,
+            recent_messages=[],
+            rule_result=make_rule_result(),
+        )
