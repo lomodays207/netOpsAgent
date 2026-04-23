@@ -127,6 +127,45 @@ def test_classify_unknown_route_raises_classification_error():
         )
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        """{
+            "route": "general_chat",
+            "confidence": "0.88",
+            "reason": "confidence_string"
+        }""",
+        """{
+            "route": "general_chat",
+            "confidence": true,
+            "reason": "confidence_boolean"
+        }""",
+        """{
+            "route": "general_chat",
+            "confidence": 0.88,
+            "reason": "needs_more_detail_string",
+            "needs_more_detail": "yes"
+        }""",
+        """{
+            "route": "general_chat",
+            "confidence": 0.88,
+            "reason": "extra_key",
+            "unexpected": "value"
+        }""",
+    ],
+)
+def test_classify_malformed_payload_raises_classification_error(response):
+    classifier = LLMIntentClassifier(llm_client=FakeLLMClient(response))
+
+    with pytest.raises(LLMIntentClassificationError):
+        classifier.classify(
+            message="端口不通怎么排查？",
+            session=None,
+            recent_messages=[],
+            rule_result=make_rule_result(),
+        )
+
+
 def test_build_prompt_truncates_current_and_recent_message_content():
     llm_client = FakeLLMClient(
         """{

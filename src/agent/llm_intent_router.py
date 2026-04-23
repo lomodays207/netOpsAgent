@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..integrations.llm_client import LLMClient
 from .intent_types import LLMIntentResult, RuleIntentResult
@@ -36,12 +36,28 @@ class LLMIntentClassificationError(Exception):
 
 
 class _LLMIntentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     route: AllowedRoute
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
     clarify_message: Optional[str] = None
     needs_more_detail: bool = False
     detected_signals: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _validate_confidence_type(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("confidence must be a JSON number")
+        return value
+
+    @field_validator("needs_more_detail", mode="before")
+    @classmethod
+    def _validate_needs_more_detail_type(cls, value: Any) -> Any:
+        if not isinstance(value, bool):
+            raise ValueError("needs_more_detail must be a boolean")
+        return value
 
 
 class LLMIntentClassifier:
