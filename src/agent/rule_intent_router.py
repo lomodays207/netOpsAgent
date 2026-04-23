@@ -14,7 +14,7 @@ ACCESS_RELATION_RE = re.compile(
     re.IGNORECASE,
 )
 ACCESS_RELATION_KNOWLEDGE_RE = re.compile(
-    r"(怎么|如何|为什么|什么是|步骤|原理|思路|办法|开权限|配置|申请|开通)",
+    r"(怎么|如何|为什么|什么是|步骤|原理|思路|办法|开权限|配置|申请|提单|权限|审批|必填|准备|流程)",
     re.IGNORECASE,
 )
 QUESTION_STYLE_RE = re.compile(

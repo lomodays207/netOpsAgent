@@ -83,3 +83,25 @@ def test_classify_access_relation_method_query_stays_soft_general_chat():
     assert result.certainty == "soft"
     assert result.reason == "general_network_question"
     assert result.signals["is_access_relation_query"] is False
+
+
+def test_classify_access_relation_status_query_stays_hard_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("请帮我查询 XX 系统到 XX 系统之间是否已经开通访问关系。")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "hard"
+    assert result.reason == "access_relation_query"
+    assert result.signals["is_access_relation_query"] is True
+
+
+def test_classify_access_relation_process_question_stays_soft_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("访问关系如何进行开通提单？需要哪些权限、审批节点和必填信息？")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "soft"
+    assert result.reason == "general_network_question"
+    assert result.signals["is_access_relation_query"] is False

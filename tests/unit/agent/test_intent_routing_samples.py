@@ -97,6 +97,14 @@ def _json_response(route, confidence=0.91, reason="llm_reinforces_rule"):
             0,
         ),
         (
+            "请帮我查询 XX 系统到 XX 系统之间是否已经开通访问关系。",
+            None,
+            AssertionError("LLM should not be called for access relation status queries"),
+            "general_chat",
+            "access_relation_query",
+            0,
+        ),
+        (
             "访问关系如何开权限",
             None,
             lambda _: _json_response(
@@ -106,6 +114,18 @@ def _json_response(route, confidence=0.91, reason="llm_reinforces_rule"):
             ),
             "general_chat",
             "knowledge_method_question",
+            1,
+        ),
+        (
+            "访问关系如何进行开通提单？需要哪些权限、审批节点和必填信息？",
+            None,
+            lambda _: _json_response(
+                "general_chat",
+                confidence=0.94,
+                reason="process_question",
+            ),
+            "general_chat",
+            "process_question",
             1,
         ),
         (
