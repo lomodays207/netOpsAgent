@@ -1,0 +1,546 @@
+# RAG证据来源展示功能 - 技术设计文档
+
+## 1. 功能概述
+
+当用户询问知识性问题（如"访问关系如何进行开通提单"）时，系统会从RAG知识库中检索相关文档。本功能旨在：
+1. 在API响应中返回RAG检索到的证据来源信息
+2. 在前端页面展示这些证据来源（文档标题、相关度评分等）
+3. 支持用户点击证据来源，预览完整的文档内容
+
+## 2. 高层设计
+
+### 2.1 系统架构图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          前端 (Frontend)                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌──────────────────┐         ┌──────────────────────────────┐  │
+│  │   聊天界面组件    │         │   证据来源展示组件            │  │
+│  │  ChatInterface   │────────▶│   EvidenceSourcePanel        │  │
+│  │                  │         │                              │  │
+│  │  - 消息列表      │         │  - 证据卡片列表              │  │
+│  │  - 输入框        │         │  - 相关度评分                │  │
+│  │  - 发送按钮      │         │  - 点击预览                  │  │
+│  └──────────────────┘         └──────────────────────────────┘  │
+│           │                              │                       │
+│           │                              ▼                       │
+│           │                   ┌──────────────────────────────┐  │
+│           │                   │   证据预览模态框              │  │
+│           │                   │   EvidencePreviewModal       │  │
+│           │                   │                              │  │
+│           │                   │  - 文档标题                  │  │
+│           │                   │  - 完整内容                  │  │
+│           │                   │  - 关闭按钮                  │  │
+│           │                   └──────────────────────────────┘  │
+│           │                                                      │
+└───────────┼──────────────────────────────────────────────────────┘
+            │
+            │ SSE Stream (Server-Sent Events)
+            │ /api/v1/chat/stream
+            │
+┌───────────▼──────────────────────────────────────────────────────┐
+│                        后端 API (FastAPI)                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  chat_stream() - 统一聊天入口                             │   │
+│  │  ├─ 意图路由 (IntentRouter)                              │   │
+│  │  └─ general_chat_stream_v2() - 通用聊天处理              │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           │                                                      │
+│           ▼                                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  general_chat_stream_v2()                                │   │
+│  │  ├─ 检测是否跳过RAG (is_access_relation_data_query)      │   │
+│  │  ├─ 执行RAG检索 (RAGChain.build_enhanced_prompt)         │   │
+│  │  ├─ 收集证据来源 (retrieved_docs)                        │   │
+│  │  ├─ 发送证据事件 (type: 'evidence_sources')              │   │
+│  │  └─ 调用LLM生成回答 (GeneralChatToolAgent)               │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           │                                                      │
+│           ▼                                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  RAG检索层 (RAG Layer)                                    │   │
+│  │  ├─ RAGChain.retrieve() - 检索相关文档                   │   │
+│  │  ├─ VectorStore.search() - 向量搜索                      │   │
+│  │  └─ 返回文档列表 + 元数据                                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           │                                                      │
+│           ▼                                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  新增API端点                                              │   │
+│  │  GET /api/v1/knowledge/document/{doc_id}                 │   │
+│  │  - 根据文档ID返回完整文档内容                            │   │
+│  │  - 用于证据预览                                          │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 数据流图
+
+```
+用户提问 "访问关系如何进行开通提单？"
+    │
+    ▼
+[前端] 发送请求到 /api/v1/chat/stream
+    │
+    ▼
+[后端] chat_stream() 接收请求
+    │
+    ▼
+[后端] IntentRouter 判断意图 → general_chat
+    │
+    ▼
+[后端] general_chat_stream_v2() 处理
+    │
+    ├─ 检测是否跳过RAG → 否（这是知识性问题）
+    │
+    ├─ 执行RAG检索
+    │   │
+    │   ▼
+    │  RAGChain.build_enhanced_prompt()
+    │   │
+    │   ├─ VectorStore.search() 向量搜索
+    │   │   └─ 返回 top_k 个相关文档
+    │   │
+    │   ├─ 过滤低相关度文档 (relevance_score >= 0.05)
+    │   │
+    │   └─ 返回 (query, system_prompt, retrieved_docs)
+    │
+    ├─ 发送SSE事件: type='evidence_sources'
+    │   {
+    │     "type": "evidence_sources",
+    │     "sources": [
+    │       {
+    │         "id": "doc_123",
+    │         "filename": "访问关系开通流程.txt",
+    │         "relevance_score": 0.85,
+    │         "preview": "访问关系开通需要提交工单..."
+    │       },
+    │       ...
+    │     ]
+    │   }
+    │
+    ├─ 调用LLM生成回答（基于RAG增强的prompt）
+    │
+    └─ 流式返回LLM回答
+    │
+    ▼
+[前端] 接收SSE事件流
+    │
+    ├─ 收到 type='evidence_sources' → 渲染证据来源面板
+    │
+    ├─ 收到 type='content' → 渲染LLM回答
+    │
+    └─ 收到 type='complete' → 完成
+    │
+    ▼
+[前端] 用户点击证据来源
+    │
+    ▼
+[前端] 发送请求到 GET /api/v1/knowledge/document/{doc_id}
+    │
+    ▼
+[后端] 返回完整文档内容
+    │
+    ▼
+[前端] 在模态框中展示文档内容
+```
+
+### 2.3 组件设计
+
+#### 2.3.1 后端组件
+
+**1. API响应扩展**
+- 在 `general_chat_stream_v2()` 中新增SSE事件类型：`evidence_sources`
+- 事件格式：
+  ```json
+  {
+    "type": "evidence_sources",
+    "sources": [
+      {
+        "id": "doc_123",
+        "filename": "访问关系开通流程.txt",
+        "relevance_score": 0.85,
+        "preview": "访问关系开通需要提交工单...",
+        "metadata": {
+          "source": "docs/knowledge/",
+          "created_at": "2026-01-15"
+        }
+      }
+    ]
+  }
+  ```
+
+**2. 新增API端点**
+- `GET /api/v1/knowledge/document/{doc_id}`
+- 功能：根据文档ID返回完整文档内容
+- 响应格式：
+  ```json
+  {
+    "id": "doc_123",
+    "filename": "访问关系开通流程.txt",
+    "content": "完整文档内容...",
+    "metadata": {
+      "source": "docs/knowledge/",
+      "created_at": "2026-01-15",
+      "file_size": 1024
+    }
+  }
+  ```
+
+**3. RAG检索增强**
+- 修改 `RAGChain.retrieve()` 返回格式，确保包含文档ID
+- 文档ID生成规则：使用文件路径的哈希值或数据库主键
+
+#### 2.3.2 前端组件
+
+**1. EvidenceSourcePanel（证据来源面板）**
+- 位置：聊天消息下方
+- 显示内容：
+  - 证据来源数量
+  - 每个证据的卡片（标题、相关度、预览文本）
+  - 点击卡片触发预览
+
+**2. EvidencePreviewModal（证据预览模态框）**
+- 触发：点击证据卡片
+- 显示内容：
+  - 文档标题
+  - 完整文档内容（支持滚动）
+  - 关闭按钮
+
+**3. 聊天消息扩展**
+- 在消息对象中添加 `evidenceSources` 字段
+- 持久化证据来源信息，支持历史消息查看
+
+### 2.4 数据模型
+
+#### 2.4.1 EvidenceSource（证据来源）
+
+```typescript
+interface EvidenceSource {
+  id: string;                    // 文档唯一标识
+  filename: string;              // 文件名
+  relevance_score: number;       // 相关度评分 (0-1)
+  preview: string;               // 预览文本（前200字符）
+  metadata?: {                   // 元数据（可选）
+    source?: string;             // 来源路径
+    created_at?: string;         // 创建时间
+    file_size?: number;          // 文件大小
+  };
+}
+```
+
+#### 2.4.2 DocumentDetail（文档详情）
+
+```typescript
+interface DocumentDetail {
+  id: string;                    // 文档唯一标识
+  filename: string;              // 文件名
+  content: string;               // 完整内容
+  metadata?: {                   // 元数据
+    source?: string;             // 来源路径
+    created_at?: string;         // 创建时间
+    file_size?: number;          // 文件大小
+  };
+}
+```
+
+#### 2.4.3 SSE事件扩展
+
+```typescript
+// 新增事件类型
+type SSEEventType = 
+  | 'start'
+  | 'content'
+  | 'complete'
+  | 'error'
+  | 'rag_start'
+  | 'rag_result'
+  | 'rag_skipped'
+  | 'evidence_sources'  // 新增：证据来源事件
+  | 'tool_start'
+  | 'tool_result';
+
+// evidence_sources 事件格式
+interface EvidenceSourcesEvent {
+  type: 'evidence_sources';
+  sources: EvidenceSource[];
+}
+```
+
+### 2.5 技术栈
+
+#### 后端
+- **框架**: FastAPI
+- **流式传输**: Server-Sent Events (SSE)
+- **RAG检索**: ChromaDB + LangChain
+- **向量存储**: VectorStore (现有)
+
+#### 前端
+- **框架**: React / Vue（根据现有前端技术栈）
+- **SSE客户端**: EventSource API
+- **UI组件**: 
+  - 卡片组件（证据来源卡片）
+  - 模态框组件（文档预览）
+  - 评分显示组件（相关度可视化）
+
+## 3. 接口设计
+
+### 3.1 SSE事件流扩展
+
+#### 现有事件流
+```
+data: {"type": "start", "session_id": "task_xxx"}
+data: {"type": "rag_start", "message": "正在检索知识库..."}
+data: {"type": "rag_result", "count": 2, "sources": ["文件1.txt", "文件2.txt"]}
+data: {"type": "content", "text": "根据知识库..."}
+data: {"type": "complete", "session_id": "task_xxx", "rag_used": true}
+```
+
+#### 新增事件流
+```
+data: {"type": "start", "session_id": "task_xxx"}
+data: {"type": "rag_start", "message": "正在检索知识库..."}
+data: {"type": "evidence_sources", "sources": [
+  {
+    "id": "doc_123",
+    "filename": "访问关系开通流程.txt",
+    "relevance_score": 0.85,
+    "preview": "访问关系开通需要提交工单..."
+  },
+  {
+    "id": "doc_456",
+    "filename": "网络权限申请指南.txt",
+    "relevance_score": 0.72,
+    "preview": "网络权限申请流程包括..."
+  }
+]}
+data: {"type": "content", "text": "根据知识库..."}
+data: {"type": "complete", "session_id": "task_xxx", "rag_used": true}
+```
+
+### 3.2 新增REST API
+
+#### GET /api/v1/knowledge/document/{doc_id}
+
+**功能**: 获取文档完整内容
+
+**请求参数**:
+- `doc_id` (path): 文档ID
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "doc_123",
+    "filename": "访问关系开通流程.txt",
+    "content": "# 访问关系开通流程\n\n## 1. 提交工单\n...",
+    "metadata": {
+      "source": "docs/knowledge/service_listening.txt",
+      "created_at": "2026-01-15T10:30:00Z",
+      "file_size": 2048
+    }
+  }
+}
+```
+
+**错误响应**:
+```json
+{
+  "status": "error",
+  "message": "文档不存在"
+}
+```
+
+## 4. 实现细节
+
+### 4.1 文档ID生成策略
+
+**方案1: 基于文件路径的哈希**
+```python
+import hashlib
+
+def generate_doc_id(file_path: str) -> str:
+    """生成文档ID（基于文件路径的SHA256哈希）"""
+    return hashlib.sha256(file_path.encode()).hexdigest()[:16]
+```
+
+**方案2: 使用向量数据库的ID**
+```python
+def generate_doc_id(chroma_id: str) -> str:
+    """直接使用ChromaDB的文档ID"""
+    return chroma_id
+```
+
+**推荐**: 方案2（使用ChromaDB的ID），因为：
+- 避免重复计算
+- 与向量数据库保持一致
+- 查询效率更高
+
+### 4.2 文档内容缓存
+
+为了提高性能，可以考虑缓存文档内容：
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=100)
+def get_document_content(doc_id: str) -> str:
+    """获取文档内容（带缓存）"""
+    # 从向量数据库或文件系统读取
+    return content
+```
+
+### 4.3 前端状态管理
+
+```typescript
+// 聊天消息状态
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  evidenceSources?: EvidenceSource[];  // 新增：证据来源
+}
+
+// 证据预览状态
+interface EvidencePreviewState {
+  isOpen: boolean;
+  loading: boolean;
+  document: DocumentDetail | null;
+  error: string | null;
+}
+```
+
+### 4.4 UI交互流程
+
+```
+1. 用户发送问题
+   ↓
+2. 前端显示"正在检索知识库..."
+   ↓
+3. 收到 evidence_sources 事件
+   ↓
+4. 渲染证据来源面板（折叠状态）
+   - 显示"找到 N 个相关文档"
+   - 显示证据卡片列表
+   ↓
+5. 收到 content 事件
+   ↓
+6. 流式渲染LLM回答
+   ↓
+7. 用户点击证据卡片
+   ↓
+8. 发送GET请求获取完整文档
+   ↓
+9. 在模态框中展示文档内容
+   ↓
+10. 用户关闭模态框
+```
+
+## 5. 性能考虑
+
+### 5.1 文档预览优化
+- **预览文本长度**: 限制为200字符
+- **文档内容缓存**: 使用LRU缓存，最多缓存100个文档
+- **懒加载**: 只在用户点击时才加载完整文档
+
+### 5.2 SSE事件优化
+- **批量发送**: 将多个证据来源合并为一个事件
+- **压缩**: 对大文档内容进行gzip压缩
+- **限流**: 限制证据来源数量（最多5个）
+
+### 5.3 前端渲染优化
+- **虚拟滚动**: 如果证据来源很多，使用虚拟滚动
+- **防抖**: 搜索和过滤操作使用防抖
+- **懒渲染**: 证据面板默认折叠，点击展开
+
+## 6. 安全考虑
+
+### 6.1 文档访问控制
+- 验证文档ID的合法性
+- 防止路径遍历攻击
+- 限制文档大小（最大10MB）
+
+### 6.2 XSS防护
+- 对文档内容进行HTML转义
+- 使用Content-Security-Policy
+- 禁止执行文档中的脚本
+
+### 6.3 速率限制
+- 限制文档查询频率（每分钟最多10次）
+- 防止恶意爬取知识库
+
+## 7. 测试策略
+
+### 7.1 单元测试
+- RAG检索返回证据来源
+- 文档ID生成正确性
+- 文档内容查询正确性
+
+### 7.2 集成测试
+- SSE事件流包含evidence_sources
+- GET /api/v1/knowledge/document/{doc_id} 返回正确内容
+- 前端正确渲染证据来源
+
+### 7.3 端到端测试
+- 用户提问 → 显示证据来源 → 点击预览 → 查看完整文档
+
+## 8. 部署考虑
+
+### 8.1 向后兼容
+- 新增的SSE事件不影响现有前端
+- 旧版前端忽略evidence_sources事件
+- 新增API端点不影响现有功能
+
+### 8.2 灰度发布
+- 通过feature flag控制证据来源功能
+- 逐步放量，监控性能指标
+- 出现问题可快速回滚
+
+### 8.3 监控指标
+- RAG检索耗时
+- 文档查询耗时
+- 证据来源点击率
+- 文档预览加载时间
+
+## 9. 未来扩展
+
+### 9.1 证据来源排序
+- 支持按相关度、时间、文件名排序
+- 支持过滤低相关度文档
+
+### 9.2 证据来源高亮
+- 在文档预览中高亮匹配的关键词
+- 支持跳转到匹配位置
+
+### 9.3 证据来源反馈
+- 用户可以标记证据是否有用
+- 收集反馈数据优化RAG检索
+
+### 9.4 多模态证据
+- 支持图片、表格等多媒体证据
+- 支持PDF、Word等格式预览
+
+## 10. 总结
+
+本设计文档描述了RAG证据来源展示功能的高层架构，包括：
+- 系统架构图和数据流图
+- 后端API扩展（SSE事件 + REST API）
+- 前端组件设计（证据面板 + 预览模态框）
+- 数据模型定义
+- 实现细节和性能优化
+- 安全考虑和测试策略
+
+核心设计原则：
+1. **最小侵入**: 在现有架构基础上扩展，不破坏现有功能
+2. **用户友好**: 证据来源清晰展示，预览操作简单直观
+3. **性能优先**: 使用缓存、懒加载等优化手段
+4. **安全可靠**: 防止XSS、路径遍历等安全问题
+
+下一步将基于此设计文档创建详细的需求文档和任务列表。

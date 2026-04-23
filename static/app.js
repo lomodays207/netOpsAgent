@@ -8,7 +8,7 @@ let currentToolRunId = null;
 
 const QUICK_PROMPTS = [
     {
-        category: '故障诊断',
+        category: '网络故障诊断',
         items: [
             {
                 title: '源到目标端口不通',
@@ -28,7 +28,7 @@ const QUICK_PROMPTS = [
         ]
     },
     {
-        category: '访问关系',
+        category: '访问关系查询',
         items: [
             {
                 title: '查询系统访问关系清单',
@@ -48,7 +48,7 @@ const QUICK_PROMPTS = [
         ]
     },
     {
-        category: '权限提单',
+        category: '提单知识问答',
         items: [
             {
                 title: '访问关系如何开通提单',
@@ -909,6 +909,38 @@ function createToolCallCard(step, toolName, args) {
     return card;
 }
 
+function attachAccessRelationExport(toolCard, toolName, result) {
+    const actionsEl = toolCard.querySelector('.tool-actions');
+    if (!actionsEl) {
+        return;
+    }
+
+    actionsEl.innerHTML = '';
+    actionsEl.hidden = true;
+
+    if (toolName !== 'query_access_relations' || !result || !result.success) {
+        return;
+    }
+
+    const items = Array.isArray(result.items) ? result.items : [];
+    if (items.length === 0) {
+        return;
+    }
+
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'tool-export-btn';
+    exportBtn.textContent = '导出 CSV';
+    exportBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        downloadAccessRelationsCsv(items);
+    });
+
+    actionsEl.appendChild(exportBtn);
+    actionsEl.hidden = false;
+}
+
 /**
  * 从历史记录创建工具调用卡片（已完成的状态）
  */
@@ -958,6 +990,7 @@ function createToolCallCardFromHistory(toolCall) {
 
     resultEl.textContent = output;
     resultEl.className = `tool-result ${result.success ? 'success' : 'error'}`;
+    attachAccessRelationExport(toolCard, toolCall.name, result);
 
     // 添加点击事件处理折叠/展开
     const header = card.querySelector('.tool-header');
@@ -1030,7 +1063,66 @@ function updateToolCallResult(step, toolName, result, executionTime) {
         resultEl.className = 'tool-result error';
     }
 
+    attachAccessRelationExport(toolCard, toolName, result);
     scrollToBottom();
+}
+
+function downloadAccessRelationsCsv(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return;
+    }
+
+    const columns = [
+        { key: 'src_system', title: '源系统' },
+        { key: 'src_system_name', title: '源系统名称' },
+        { key: 'src_deploy_unit', title: '源部署单元' },
+        { key: 'src_ip', title: '源IP' },
+        { key: 'dst_system', title: '目标系统' },
+        { key: 'dst_deploy_unit', title: '目标部署单元' },
+        { key: 'dst_ip', title: '目标IP' },
+        { key: 'protocol', title: '协议' },
+        { key: 'port', title: '端口' }
+    ];
+    const headerRow = columns.map((column) => escapeCsvValue(column.title)).join(',');
+    const dataRows = items.map((item) => columns
+        .map((column) => escapeCsvValue(item?.[column.key] ?? ''))
+        .join(','));
+    const csvContent = `\uFEFF${[headerRow, ...dataRows].join('\r\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = `access-relations-${formatExportTimestamp(new Date())}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function escapeCsvValue(value) {
+    const normalized = String(value ?? '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n');
+    const escaped = normalized.replace(/"/g, '""');
+
+    if (/[",\n]/.test(normalized)) {
+        return `"${escaped}"`;
+    }
+
+    return escaped;
+}
+
+function formatExportTimestamp(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+
+    return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
 function createQuestionMessage(question) {

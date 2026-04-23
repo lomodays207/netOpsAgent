@@ -56,3 +56,27 @@ def test_style_css_contains_quick_prompt_layout_rules():
     assert ".quick-prompt-card-list" in css
     assert ".quick-prompt-card:hover" in css
     assert "grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));" in css
+
+
+def test_chat_tool_card_template_supports_export_actions():
+    index_html = read_static_file("index.html")
+
+    assert 'id="tool-call-template"' in index_html
+    assert 'class="tool-actions"' in index_html
+
+
+def test_app_js_supports_access_relation_csv_export():
+    app_js = read_static_file("app.js")
+
+    assert "导出 CSV" in app_js
+    assert "function downloadAccessRelationsCsv(items)" in app_js
+    assert "function attachAccessRelationExport(toolCard, toolName, result)" in app_js
+    assert "query_access_relations" in app_js
+
+
+def test_style_css_contains_tool_export_button_rules():
+    css = read_static_file("style.css")
+
+    assert ".tool-actions" in css
+    assert ".tool-export-btn" in css
+    assert ".tool-export-btn:hover" in css

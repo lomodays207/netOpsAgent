@@ -2,29 +2,31 @@
 
 ## Introduction
 
-当用户在聊天窗口查询具体系统或部署单元的访问关系数据（如"N-CRM有哪些访问关系"、"CRMJS_AP部署单元有哪些访问关系"）时，系统错误地先执行 RAG 知识库检索，而不是让 LLM 直接调用 `query_access_relations` 工具函数查询数据库。这导致访问关系数据查询的响应路径不正确，可能返回知识库中的示例数据或过时信息，而不是从数据库获取实时准确的访问关系数据。
+当用户在聊天窗口查询具体系统、部署单元或 IP 地址的访问关系数据（如"N-CRM有哪些访问关系"、"CRMJS_AP部署单元有哪些访问关系"、"IP 为 10.0.1.10 的主机有哪些访问关系"）时，系统错误地先执行 RAG 知识库检索，而不是让 LLM 直接调用 `query_access_relations` 工具函数查询数据库。这导致访问关系数据查询的响应路径不正确，可能返回知识库中的示例数据或过时信息，而不是从数据库获取实时准确的访问关系数据。
 
 **重要区分**：
-- **访问关系数据查询**（如"N-CRM有哪些访问关系"）→ 应该直接调用工具，跳过 RAG
+- **访问关系数据查询**（如"N-CRM有哪些访问关系"、"10.0.1.10 有哪些访问关系"）→ 应该直接调用工具，跳过 RAG
 - **访问关系知识咨询**（如"访问关系如何开权限"、"如何提单"）→ 应该使用 RAG 检索知识库
 
-本 bugfix 旨在修复这个问题，确保访问关系**数据查询**直接走工具调用路径，跳过 RAG 检索，而访问关系**知识咨询**仍然使用 RAG。
+本 bugfix 旨在修复这个问题，确保访问关系**数据查询**（包括 IP 地址查询）直接走工具调用路径，跳过 RAG 检索，而访问关系**知识咨询**仍然使用 RAG。
 
 ## Bug Analysis
 
 ### Current Behavior (Defect)
 
-1.1 WHEN 用户消息是访问关系数据查询（如"N-CRM有哪些访问关系"、"哪些系统访问N-OA"、"CRMJS_AP部署单元有哪些访问关系"）且 `use_rag=True` THEN 系统先执行 RAG 知识库检索，然后才将消息传递给 LLM 进行工具调用判断
+1.1 WHEN 用户消息是访问关系数据查询（如"N-CRM有哪些访问关系"、"哪些系统访问N-OA"、"CRMJS_AP部署单元有哪些访问关系"、"IP 为 10.0.1.10 的主机有哪些访问关系"）且 `use_rag=True` THEN 系统先执行 RAG 知识库检索，然后才将消息传递给 LLM 进行工具调用判断
 
 1.2 WHEN 用户询问"N-CRM有哪些访问关系"且 `use_rag=True` THEN 系统在 `general_chat_stream_v2` 函数中先调用 `rag_chain.build_enhanced_prompt`，将知识库检索结果注入到 system prompt 中
 
-1.3 WHEN 访问关系数据查询触发 RAG 检索 THEN 系统可能返回知识库中的示例数据或过时信息，而不是数据库中的实时访问关系数据
+1.3 WHEN 用户询问"IP 为 10.0.1.10 的主机有哪些访问关系"且 `use_rag=True` THEN 系统先执行 RAG 知识库检索，因为当前的系统标识符模式不包含 IP 地址格式
 
-1.4 WHEN 用户询问"N-CRM有哪些访问关系" THEN LLM 可能基于知识库中的示例数据回答，而不是调用 `query_access_relations` 工具查询数据库
+1.4 WHEN 访问关系数据查询触发 RAG 检索 THEN 系统可能返回知识库中的示例数据或过时信息，而不是数据库中的实时访问关系数据
+
+1.5 WHEN 用户询问"N-CRM有哪些访问关系" THEN LLM 可能基于知识库中的示例数据回答，而不是调用 `query_access_relations` 工具查询数据库
 
 ### Expected Behavior (Correct)
 
-2.1 WHEN 用户消息是访问关系数据查询（包含系统编码、系统名称或部署单元，并询问访问关系）THEN 系统 SHALL 跳过 RAG 知识库检索，直接将消息传递给 GeneralChatToolAgent 进行工具调用
+2.1 WHEN 用户消息是访问关系数据查询（包含系统编码、系统名称、部署单元或 IP 地址，并询问访问关系）THEN 系统 SHALL 跳过 RAG 知识库检索，直接将消息传递给 GeneralChatToolAgent 进行工具调用
 
 2.2 WHEN 用户询问"N-CRM有哪些访问关系" THEN 系统 SHALL 跳过 RAG 检索，让 LLM 识别这是访问关系数据查询意图，直接调用 `query_access_relations` 工具函数，从数据库查询并返回实时数据
 
@@ -32,9 +34,15 @@
 
 2.4 WHEN 用户询问"哪些系统访问N-OA" THEN 系统 SHALL 跳过 RAG 检索，让 LLM 调用 `query_access_relations(system_code="N-OA", direction="inbound")`
 
-2.5 WHEN 访问关系数据查询被识别 THEN 系统 SHALL 在事件流中发出 `rag_skipped` 事件，说明跳过 RAG 的原因（如"检测到访问关系数据查询，跳过知识库检索"）
+2.5 WHEN 用户询问"IP 为 10.0.1.10 的主机有哪些访问关系" THEN 系统 SHALL 跳过 RAG 检索，让 LLM 调用 `query_access_relations` 工具函数，使用 IP 地址作为查询条件
 
-2.6 WHEN 用户询问访问关系相关知识（如"访问关系如何开权限"、"如何提单"、"访问关系管理流程"）THEN 系统 SHALL 执行 RAG 知识库检索，增强 system prompt
+2.6 WHEN 用户询问"10.0.1.10 有哪些访问关系" THEN 系统 SHALL 跳过 RAG 检索，让 LLM 调用 `query_access_relations` 工具函数
+
+2.7 WHEN 用户询问"查询 10.0.1.10 的访问关系" THEN 系统 SHALL 跳过 RAG 检索，让 LLM 调用 `query_access_relations` 工具函数
+
+2.8 WHEN 访问关系数据查询被识别 THEN 系统 SHALL 在事件流中发出 `rag_skipped` 事件，说明跳过 RAG 的原因（如"检测到访问关系数据查询，跳过知识库检索"）
+
+2.9 WHEN 用户询问访问关系相关知识（如"访问关系如何开权限"、"如何提单"、"访问关系管理流程"）THEN 系统 SHALL 执行 RAG 知识库检索，增强 system prompt
 
 ### Unchanged Behavior (Regression Prevention)
 
@@ -59,7 +67,7 @@ FUNCTION isBugCondition(X)
   
   // 返回 true 当消息是访问关系数据查询且 RAG 开关打开
   // 访问关系数据查询的特征：
-  // 1. 包含系统编码（如 N-CRM、N-OA）或系统名称（如"客户关系管理系统"）或部署单元（如 CRMJS_AP）
+  // 1. 包含系统编码（如 N-CRM、N-OA）或系统名称（如"客户关系管理系统"）或部署单元（如 CRMJS_AP）或 IP 地址（如 10.0.1.10）
   // 2. 询问访问关系（如"有哪些访问关系"、"哪些系统访问"、"被哪些系统访问"）
   // 3. 不是询问流程、权限、提单等知识性问题
   
@@ -68,8 +76,8 @@ FUNCTION isBugCondition(X)
 END FUNCTION
 
 FUNCTION is_access_relation_data_query(message)
-  // 检测是否包含系统标识符
-  has_system_identifier = MATCHES(message, "(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统)")
+  // 检测是否包含系统标识符（包括 IP 地址）
+  has_system_identifier = MATCHES(message, "(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})")
   
   // 检测是否询问访问关系数据
   asks_for_relations = MATCHES(message, "(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系)")
@@ -174,4 +182,72 @@ request = GeneralChatRequestWithRAG(
 2. 跳过 RAG 检索
 3. 发出 `rag_skipped` 事件
 4. LLM 调用 `query_access_relations(deploy_unit="CRMJS_AP", direction="outbound")`
+5. 从数据库查询并返回实时访问关系数据
+
+### Example 4: IP 地址访问关系查询（应跳过 RAG）
+
+**输入**：
+```python
+request = GeneralChatRequestWithRAG(
+    message="IP 为 10.0.1.10 的主机有哪些访问关系",
+    use_rag=True,
+    session_id=None
+)
+```
+
+**当前行为（错误）**：
+1. 系统执行 `rag_chain.build_enhanced_prompt("IP 为 10.0.1.10 的主机有哪些访问关系", ...)`
+2. 发出 `rag_start` 事件："正在检索知识库..."
+3. 发出 `rag_result` 事件，可能包含知识库中的示例数据
+4. 将增强后的 system prompt 传递给 GeneralChatToolAgent
+5. LLM 可能基于知识库中的示例数据回答，而不是调用 `query_access_relations` 工具
+
+**期望行为（正确）**：
+1. 系统检测到消息是访问关系数据查询（包含 IP 地址 10.0.1.10，询问访问关系）
+2. 跳过 RAG 检索
+3. 发出 `rag_skipped` 事件："检测到访问关系数据查询，跳过知识库检索"
+4. 将原始 system prompt 传递给 GeneralChatToolAgent
+5. LLM 识别访问关系数据查询意图，调用 `query_access_relations` 工具函数（使用 IP 地址作为查询条件）
+6. 从数据库查询并返回实时访问关系数据
+
+### Example 5: 简短 IP 地址查询（应跳过 RAG）
+
+**输入**：
+```python
+request = GeneralChatRequestWithRAG(
+    message="10.0.1.10 有哪些访问关系",
+    use_rag=True,
+    session_id=None
+)
+```
+
+**当前行为（错误）**：
+系统执行 RAG 检索，因为当前的系统标识符模式不包含 IP 地址格式。
+
+**期望行为（正确）**：
+1. 系统检测到消息是访问关系数据查询（包含 IP 地址 10.0.1.10，询问访问关系）
+2. 跳过 RAG 检索
+3. 发出 `rag_skipped` 事件
+4. LLM 调用 `query_access_relations` 工具函数
+5. 从数据库查询并返回实时访问关系数据
+
+### Example 6: 查询 IP 地址访问关系（应跳过 RAG）
+
+**输入**：
+```python
+request = GeneralChatRequestWithRAG(
+    message="查询 10.0.1.10 的访问关系",
+    use_rag=True,
+    session_id=None
+)
+```
+
+**当前行为（错误）**：
+系统执行 RAG 检索，因为当前的系统标识符模式不包含 IP 地址格式。
+
+**期望行为（正确）**：
+1. 系统检测到消息是访问关系数据查询（包含 IP 地址 10.0.1.10，询问访问关系）
+2. 跳过 RAG 检索
+3. 发出 `rag_skipped` 事件
+4. LLM 调用 `query_access_relations` 工具函数
 5. 从数据库查询并返回实时访问关系数据

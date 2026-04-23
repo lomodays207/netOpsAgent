@@ -50,6 +50,20 @@ class TestAccessRelationDataQueryDetection:
         assert is_access_relation_data_query("N-CRM访问哪些系统") is True
         assert is_access_relation_data_query("N-CRM被哪些系统访问") is True
     
+    def test_ip_address_query(self):
+        """IP address query pattern"""
+        assert is_access_relation_data_query("IP 为 10.0.1.10 的主机有哪些访问关系") is True
+        assert is_access_relation_data_query("10.0.1.10 有哪些访问关系") is True
+        assert is_access_relation_data_query("查询 10.0.1.10 的访问关系") is True
+        assert is_access_relation_data_query("192.168.1.1 有哪些访问关系") is True
+        assert is_access_relation_data_query("172.16.0.1 被哪些系统访问") is True
+    
+    def test_ip_address_various_formats(self):
+        """Various IP address formats"""
+        assert is_access_relation_data_query("10.0.0.1 有哪些访问关系") is True
+        assert is_access_relation_data_query("255.255.255.255 有哪些访问关系") is True
+        assert is_access_relation_data_query("1.1.1.1 有哪些访问关系") is True
+    
     # ========================================================================
     # Negative Cases - Should Return False (Knowledge Queries)
     # ========================================================================
@@ -89,6 +103,16 @@ class TestAccessRelationDataQueryDetection:
         assert is_access_relation_data_query("N-CRM是什么系统") is False
         assert is_access_relation_data_query("N-CRM的功能有哪些") is False
     
+    def test_ip_address_without_relation_query(self):
+        """IP address without relation query pattern"""
+        assert is_access_relation_data_query("10.0.1.10 是什么") is False
+        assert is_access_relation_data_query("IP 地址是什么") is False
+    
+    def test_ip_address_with_knowledge_query(self):
+        """IP address with knowledge query pattern (should return False)"""
+        assert is_access_relation_data_query("10.0.1.10 如何开权限") is False
+        assert is_access_relation_data_query("IP 为 10.0.1.10 的主机如何配置") is False
+    
     # ========================================================================
     # Edge Cases
     # ========================================================================
@@ -127,6 +151,10 @@ class TestAccessRelationDataQueryDetection:
             "客户关系管理有哪些访问关系",  # Without "系统" suffix
             "办公自动化有哪些访问关系",      # Without "系统" suffix
             "P-DB-MAIN被哪些系统访问",
+            "IP 为 10.0.1.10 的主机有哪些访问关系",  # IP address query
+            "10.0.1.10 有哪些访问关系",              # Short IP query
+            "查询 10.0.1.10 的访问关系",             # Query IP
+            "192.168.1.1 有哪些访问关系",            # Different IP format
         ]
         for query in queries:
             assert is_access_relation_data_query(query) is True, f"Failed for: {query}"

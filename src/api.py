@@ -164,7 +164,7 @@ def is_access_relation_data_query(message: str) -> bool:
     检测消息是否为访问关系数据查询（而非知识咨询）
     
     访问关系数据查询的特征：
-    1. 包含系统标识符（系统编码、系统名称或部署单元）
+    1. 包含系统标识符（系统编码、系统名称、部署单元或 IP 地址）
     2. 询问访问关系数据
     3. 不是询问知识性问题（如何、流程、权限等）
     
@@ -181,16 +181,19 @@ def is_access_relation_data_query(message: str) -> bool:
         False
         >>> is_access_relation_data_query("CRMJS_AP部署单元有哪些访问关系")
         True
+        >>> is_access_relation_data_query("10.0.1.10 有哪些访问关系")
+        True
     """
     import re
     
-    # 系统标识符模式：系统编码、系统名称、部署单元
+    # 系统标识符模式：系统编码、系统名称、部署单元、IP 地址
     # 匹配系统编码（N-XXX, P-XXX-XXX）、部署单元（XXXJS_XXX）、或包含"系统"的中文名称
     # 也匹配常见系统简称（如"办公自动化"、"客户关系管理"等，可能不带"系统"二字）
-    system_identifier_pattern = r"(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|[\u4e00-\u9fa5]{2,}系统|客户关系管理|办公自动化|部署单元)"
+    # 也匹配 IP 地址（如 10.0.1.10, 192.168.1.1）
+    system_identifier_pattern = r"(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|[\u4e00-\u9fa5]{2,}系统|客户关系管理|办公自动化|部署单元|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
     
     # 访问关系查询关键词
-    relation_query_pattern = r"(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系)"
+    relation_query_pattern = r"(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系|的访问关系)"
     
     # 知识性问题关键词（如果匹配，则不应跳过 RAG）
     # 使用更严格的模式，避免匹配系统名称中的"管理"字

@@ -1,0 +1,94 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - 类别标签准确性验证
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: For this deterministic UI bug, scope the property to the three concrete failing cases (three category labels)
+  - Test implementation details from Bug Condition in design:
+    - Verify that when `QUICK_PROMPTS[0].category` is "故障诊断", it should display as "网络故障诊断" (currently fails)
+    - Verify that when `QUICK_PROMPTS[1].category` is "访问关系", it should display as "访问关系查询" (currently fails)
+    - Verify that when `QUICK_PROMPTS[2].category` is "权限提单", it should display as "提单知识问答" (currently fails)
+  - The test assertions should match the Expected Behavior Properties from design
+  - Create a test file `tests/test_quick_prompts_labels.py` that:
+    - Reads `static/app.js` and extracts the `QUICK_PROMPTS` array
+    - Validates the category field values against expected accurate labels
+    - Uses property-based testing to check all three categories
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found:
+    - Category 1: Expected "网络故障诊断", got "故障诊断"
+    - Category 2: Expected "访问关系查询", got "访问关系"
+    - Category 3: Expected "提单知识问答", got "权限提单"
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 2.1, 2.2, 2.3_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - 非标签功能保持不变
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-buggy inputs:
+    - Verify that `QUICK_PROMPTS` array structure is intact (each group has category and items)
+    - Verify that each category has the correct number of items
+    - Verify that item properties (title, description, template) are unchanged
+    - Verify that the array has exactly 3 groups
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Test that modifying category field does not affect items array
+    - Test that each group maintains its items structure
+    - Test that template strings in items remain unchanged
+  - Property-based testing generates many test cases for stronger guarantees
+  - Create test file `tests/test_quick_prompts_preservation.py` that:
+    - Extracts the original `QUICK_PROMPTS` structure
+    - Validates that items arrays are preserved
+    - Validates that template strings are unchanged
+    - Validates that the number of groups and items per group is constant
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4_
+
+- [x] 3. Fix for chat page label corrections
+
+  - [x] 3.1 Implement the fix
+    - Open `static/app.js` and locate the `QUICK_PROMPTS` array (lines 9-70)
+    - Update line 12: Change `category: '故障诊断'` to `category: '网络故障诊断'`
+    - Update line 30: Change `category: '访问关系'` to `category: '访问关系查询'`
+    - Update line 50: Change `category: '权限提单'` to `category: '提单知识问答'`
+    - Verify no other changes are needed (renderQuickPrompts function should work as-is)
+    - _Bug_Condition: isBugCondition(input) where input.category IN ['故障诊断', '访问关系', '权限提单']_
+    - _Expected_Behavior: Category labels display as '网络故障诊断', '访问关系查询', '提单知识问答' respectively_
+    - _Preservation: All non-label functionality (template filling, item content, rendering logic, other chat features) remains unchanged_
+    - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4_
+
+  - [x] 3.2 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - 类别标签准确性验证
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1: `pytest tests/test_quick_prompts_labels.py -v`
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify all three category labels now match expected values:
+      - Category 1: "网络故障诊断" ✓
+      - Category 2: "访问关系查询" ✓
+      - Category 3: "提单知识问答" ✓
+    - _Requirements: 2.1, 2.2, 2.3_
+
+  - [x] 3.3 Verify preservation tests still pass
+    - **Property 2: Preservation** - 非标签功能保持不变
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2: `pytest tests/test_quick_prompts_preservation.py -v`
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all preservation checks pass:
+      - Array structure intact ✓
+      - Items arrays unchanged ✓
+      - Template strings preserved ✓
+      - Number of groups and items constant ✓
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run complete test suite: `pytest tests/test_quick_prompts_*.py -v`
+  - Verify both bug condition and preservation tests pass
+  - If any test fails, investigate and resolve before proceeding
+  - Document test results and any issues encountered
+  - Ask the user if questions arise or if manual verification is needed (e.g., visual inspection in browser)

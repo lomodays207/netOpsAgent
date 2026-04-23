@@ -486,7 +486,9 @@ class SessionDatabase:
         direction: str,
         system_codes: List[str],
         deploy_unit: Optional[str],
-        peer_system_codes: List[str]
+        peer_system_codes: List[str],
+        src_ip: Optional[str] = None,
+        dst_ip: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Query one direction of access relations."""
         conditions = []
@@ -496,10 +498,14 @@ class SessionDatabase:
             system_field = "src_system"
             deploy_field = "src_deploy_unit"
             peer_field = "dst_system"
+            ip_field = "src_ip"
+            peer_ip_field = "dst_ip"
         else:
             system_field = "dst_system"
             deploy_field = "dst_deploy_unit"
             peer_field = "src_system"
+            ip_field = "dst_ip"
+            peer_ip_field = "src_ip"
 
         if system_codes:
             placeholders = ",".join("?" for _ in system_codes)
@@ -514,6 +520,15 @@ class SessionDatabase:
             placeholders = ",".join("?" for _ in peer_system_codes)
             conditions.append(f"{peer_field} IN ({placeholders})")
             params.extend(peer_system_codes)
+
+        # Add IP address filtering
+        if src_ip:
+            conditions.append(f"src_ip = ?")
+            params.append(src_ip.strip())
+
+        if dst_ip:
+            conditions.append(f"dst_ip = ?")
+            params.append(dst_ip.strip())
 
         if not conditions:
             return []
@@ -534,10 +549,25 @@ class SessionDatabase:
         direction: str = "outbound",
         peer_system_code: Optional[str] = None,
         peer_system_name: Optional[str] = None,
+        src_ip: Optional[str] = None,
+        dst_ip: Optional[str] = None,
         page: int = 1,
         page_size: int = 50
     ) -> Dict[str, Any]:
-        """Query access relations for chat/tool-calling scenarios."""
+        """Query access relations for chat/tool-calling scenarios.
+        
+        Args:
+            system_code: System code (e.g., N-CRM)
+            system_name: System name (e.g., 客户关系管理系统)
+            deploy_unit: Deploy unit (e.g., CRMJS_AP)
+            direction: Query direction - "outbound", "inbound", or "both"
+            peer_system_code: Peer system code
+            peer_system_name: Peer system name
+            src_ip: Source IP address (e.g., 10.0.1.10)
+            dst_ip: Destination IP address (e.g., 10.0.2.20)
+            page: Page number (default 1)
+            page_size: Page size (default 50, max 100)
+        """
         try:
             if direction not in {"outbound", "inbound", "both"}:
                 raise ValueError(f"Unsupported direction: {direction}")
@@ -567,14 +597,18 @@ class SessionDatabase:
                         direction="outbound",
                         system_codes=system_codes,
                         deploy_unit=deploy_unit,
-                        peer_system_codes=peer_system_codes
+                        peer_system_codes=peer_system_codes,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip
                     )
                     inbound_items = await self._query_directional_access_relations(
                         db=db,
                         direction="inbound",
                         system_codes=system_codes,
                         deploy_unit=deploy_unit,
-                        peer_system_codes=peer_system_codes
+                        peer_system_codes=peer_system_codes,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip
                     )
 
                     merged = {}
@@ -587,7 +621,9 @@ class SessionDatabase:
                         direction=direction,
                         system_codes=system_codes,
                         deploy_unit=deploy_unit,
-                        peer_system_codes=peer_system_codes
+                        peer_system_codes=peer_system_codes,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip
                     )
 
             total = len(items)

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>netOpsAgent - AI 诊断助手</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2.4">
 </head>
 
 <body>
@@ -23,7 +23,7 @@
             <div class="input-container">
                 <form id="chat-form">
                     <div class="input-wrapper">
-                        <textarea id="user-input" placeholder="描述你的网络故障..." rows="1" autofocus></textarea>
+                        <textarea id="user-input" placeholder="请描述你的诉求，例如某访问不通排查、某系统访问关系查询、访问开通流程或提单材料咨询" rows="1" autofocus></textarea>
                         <button type="submit" id="send-btn" class="send-btn">
                             <span class="send-icon">▶</span>
                         </button>
@@ -60,7 +60,7 @@
             <div class="message-avatar">🤖</div>
             <div class="message-content">
                 <div class="message-text">
-                    你好！我是 AI 网络访问关系智能助手。请描述你遇到的网络故障，我会帮你分析根本原因。
+                    你好！我是 AI 网络访问关系智能助手。请描述你的诉求，例如某访问不通排查、某系统访问关系查询、访问开通流程或提单材料咨询。
                     <br><br>
                     例如：<code>10.0.1.10到10.0.2.20端口80不通</code>
                 </div>
@@ -116,6 +116,7 @@
                 <div class="tool-arguments"></div>
                 <div class="tool-detail-label">结果 [Result]</div>
                 <div class="tool-result"></div>
+                <div class="tool-actions" hidden></div>
             </div>
         </div>
     </template>
@@ -153,7 +154,7 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/static/app.js?v=2.3"></script>
+    <script src="/static/app.js?v=2.4"></script>
 </body>
 
 </html>

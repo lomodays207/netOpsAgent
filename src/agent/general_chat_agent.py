@@ -96,6 +96,14 @@ class QueryAccessRelationsInput(BaseModel):
         default=None,
         description="对端系统中文名称"
     )
+    src_ip: Optional[str] = Field(
+        default=None,
+        description="源 IP 地址，例如 10.0.1.10、192.168.1.1"
+    )
+    dst_ip: Optional[str] = Field(
+        default=None,
+        description="目标 IP 地址，例如 10.0.2.20、192.168.1.100"
+    )
 
 
 class GeneralChatToolAgent:
@@ -124,7 +132,9 @@ class GeneralChatToolAgent:
             deploy_unit: Optional[str] = None,
             direction: str = "outbound",
             peer_system_code: Optional[str] = None,
-            peer_system_name: Optional[str] = None
+            peer_system_name: Optional[str] = None,
+            src_ip: Optional[str] = None,
+            dst_ip: Optional[str] = None
         ) -> Dict[str, Any]:
             if not hasattr(self.session_manager, "db") or not self.session_manager.db:
                 return {
@@ -140,6 +150,8 @@ class GeneralChatToolAgent:
                 direction=direction,
                 peer_system_code=peer_system_code,
                 peer_system_name=peer_system_name,
+                src_ip=src_ip,
+                dst_ip=dst_ip,
                 page=1,
                 page_size=50,
             )
@@ -151,6 +163,8 @@ class GeneralChatToolAgent:
                 "direction": direction,
                 "peer_system_code": peer_system_code,
                 "peer_system_name": peer_system_name,
+                "src_ip": src_ip,
+                "dst_ip": dst_ip,
             }
             return {
                 "success": True,
@@ -165,7 +179,8 @@ class GeneralChatToolAgent:
             name="query_access_relations",
             description=(
                 "查询应用系统网络访问关系。"
-                "当用户询问某系统、中文系统名、部署单元、或两个系统之间有哪些访问关系时使用。"
+                "当用户询问某系统、中文系统名、部署单元、IP 地址、或两个系统之间有哪些访问关系时使用。"
+                "支持通过 src_ip 或 dst_ip 参数直接查询 IP 地址的访问关系。"
                 "direction=outbound 表示该系统访问别人，"
                 "direction=inbound 表示别人访问该系统，"
                 "direction=both 表示双向关系。"

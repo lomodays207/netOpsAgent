@@ -5,7 +5,7 @@
 
 // ===== 全局状态 =====
 let currentPage = 1;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 let totalRecords = 0;
 let pendingDeleteId = null;
 let isLoading = false;

@@ -420,6 +420,39 @@ body {
     border-left: 3px solid var(--error-color);
 }
 
+.tool-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.75rem;
+}
+
+.tool-actions[hidden] {
+    display: none !important;
+}
+
+.tool-export-btn {
+    border: 1px solid #bfdbfe;
+    border-radius: 0.5rem;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.45rem 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.tool-export-btn:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    transform: translateY(-1px);
+}
+
+.tool-export-btn:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+}
+
 /* 问题消息 */
 .question-message {
     background: #fef3c7 !important;

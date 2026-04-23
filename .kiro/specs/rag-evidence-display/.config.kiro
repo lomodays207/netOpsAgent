@@ -1,0 +1,7 @@
+{
+  "specType": "feature",
+  "workflowType": "design-first",
+  "featureName": "rag-evidence-display",
+  "designArtifacts": ["high-level"],
+  "createdAt": "2026-04-23T00:00:00Z"
+}

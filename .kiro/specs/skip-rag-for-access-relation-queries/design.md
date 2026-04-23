@@ -15,7 +15,7 @@ The fix introduces a detection mechanism to identify access relation **data quer
 - **Preservation**: Existing RAG behavior for knowledge queries and other general questions must remain unchanged
 - **general_chat_stream_v2**: The async function in `src/api.py` (line ~1789) that handles general chat requests with RAG support
 - **is_access_relation_data_query**: A new detection function that identifies whether a message is asking for access relation data (not knowledge)
-- **System Identifier**: System code (e.g., N-CRM, P-DB-MAIN), system name (e.g., 客户关系管理系统), or deploy unit (e.g., CRMJS_AP)
+- **System Identifier**: System code (e.g., N-CRM, P-DB-MAIN), system name (e.g., 客户关系管理系统), deploy unit (e.g., CRMJS_AP), or IP address (e.g., 10.0.1.10)
 - **Access Relation Data Query**: A query asking for specific access relation records from the database
 - **Access Relation Knowledge Query**: A query asking about processes, permissions, or how-to information related to access relations
 
@@ -23,7 +23,7 @@ The fix introduces a detection mechanism to identify access relation **data quer
 
 ### Bug Condition
 
-The bug manifests when a user asks for access relation data (containing system identifiers and asking about access relations) with `use_rag=True`. The `general_chat_stream_v2` function incorrectly executes RAG retrieval first, potentially returning knowledge base examples instead of letting the LLM call the tool to fetch real-time database records.
+The bug manifests when a user asks for access relation data (containing system identifiers such as system codes, system names, deploy units, or IP addresses, and asking about access relations) with `use_rag=True`. The `general_chat_stream_v2` function incorrectly executes RAG retrieval first, potentially returning knowledge base examples instead of letting the LLM call the tool to fetch real-time database records.
 
 **Formal Specification:**
 ```
@@ -39,7 +39,7 @@ FUNCTION is_access_relation_data_query(message)
   INPUT: message of type string
   OUTPUT: boolean
   
-  // Check for system identifier (system code, system name, or deploy unit)
+  // Check for system identifier (system code, system name, deploy unit, or IP address)
   has_system_identifier := MATCHES(message, SYSTEM_IDENTIFIER_PATTERN)
   
   // Check if asking about access relations
@@ -52,7 +52,7 @@ FUNCTION is_access_relation_data_query(message)
 END FUNCTION
 
 WHERE:
-  SYSTEM_IDENTIFIER_PATTERN = "(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统|部署单元)"
+  SYSTEM_IDENTIFIER_PATTERN = "(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统|部署单元|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})"
   RELATION_QUERY_PATTERN = "(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系)"
   KNOWLEDGE_QUERY_PATTERN = "(如何|怎么|流程|权限|提单|申请|审批|管理)"
 ```
@@ -67,11 +67,23 @@ WHERE:
   - **Current Behavior**: System executes RAG retrieval
   - **Expected Behavior**: System skips RAG, LLM calls `query_access_relations(deploy_unit="CRMJS_AP", direction="outbound")`
 
-- **Example 3 (Bug Condition Does NOT Hold)**: User asks "访问关系如何开权限" with `use_rag=True`
+- **Example 3 (Bug Condition Holds)**: User asks "IP 为 10.0.1.10 的主机有哪些访问关系" with `use_rag=True`
+  - **Current Behavior**: System executes RAG retrieval, may return knowledge base examples
+  - **Expected Behavior**: System skips RAG, LLM calls `query_access_relations` tool with IP address as query condition
+
+- **Example 4 (Bug Condition Holds)**: User asks "10.0.1.10 有哪些访问关系" with `use_rag=True`
+  - **Current Behavior**: System executes RAG retrieval
+  - **Expected Behavior**: System skips RAG, LLM calls `query_access_relations` tool with IP address
+
+- **Example 5 (Bug Condition Holds)**: User asks "查询 10.0.1.10 的访问关系" with `use_rag=True`
+  - **Current Behavior**: System executes RAG retrieval
+  - **Expected Behavior**: System skips RAG, LLM calls `query_access_relations` tool with IP address
+
+- **Example 6 (Bug Condition Does NOT Hold)**: User asks "访问关系如何开权限" with `use_rag=True`
   - **Current Behavior**: System executes RAG retrieval, returns knowledge documents (CORRECT)
   - **Expected Behavior**: Same as current - this is a knowledge query, should use RAG
 
-- **Example 4 (Edge Case - Bug Condition Does NOT Hold)**: User asks "N-CRM有哪些访问关系？另外访问关系如何开权限？" with `use_rag=True`
+- **Example 7 (Edge Case - Bug Condition Does NOT Hold)**: User asks "N-CRM有哪些访问关系？另外访问关系如何开权限？" with `use_rag=True`
   - **Expected Behavior**: System skips RAG (prioritize data query handling; LLM can answer knowledge part from existing knowledge)
 
 ## Expected Behavior
@@ -138,7 +150,7 @@ Assuming our root cause analysis is correct:
 **Specific Changes**:
 
 1. **Add Detection Function**: Create a new helper function `is_access_relation_data_query(message: str) -> bool` before `general_chat_stream_v2`
-   - Implement regex patterns to detect system identifiers (system codes, system names, deploy units)
+   - Implement regex patterns to detect system identifiers (system codes, system names, deploy units, IP addresses)
    - Implement regex patterns to detect relation query keywords
    - Implement regex patterns to detect knowledge query keywords
    - Return `True` only when: has system identifier AND asks for relations AND NOT asks for knowledge
@@ -164,8 +176,8 @@ def is_access_relation_data_query(message: str) -> bool:
     """Detect if message is asking for access relation data (not knowledge)."""
     import re
     
-    # Pattern for system identifiers
-    system_identifier_pattern = r"(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统|部署单元)"
+    # Pattern for system identifiers (including IP addresses)
+    system_identifier_pattern = r"(N-[A-Z]+|P-[A-Z-]+|[A-Z]+JS_[A-Z]+|客户关系管理系统|办公自动化系统|部署单元|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
     
     # Pattern for relation query keywords
     relation_query_pattern = r"(有哪些访问关系|哪些系统访问|被.*访问|访问.*系统|之间.*访问关系)"
@@ -228,7 +240,9 @@ The testing strategy follows a two-phase approach: first, surface counterexample
 1. **System Code Query Test**: Send "N-CRM有哪些访问关系" with `use_rag=True` (will execute RAG on unfixed code)
 2. **Deploy Unit Query Test**: Send "CRMJS_AP部署单元有哪些访问关系" with `use_rag=True` (will execute RAG on unfixed code)
 3. **Inbound Query Test**: Send "哪些系统访问N-OA" with `use_rag=True` (will execute RAG on unfixed code)
-4. **Knowledge Query Test**: Send "访问关系如何开权限" with `use_rag=True` (should execute RAG on unfixed code - this is correct behavior)
+4. **IP Address Query Test**: Send "IP 为 10.0.1.10 的主机有哪些访问关系" with `use_rag=True` (will execute RAG on unfixed code)
+5. **Short IP Query Test**: Send "10.0.1.10 有哪些访问关系" with `use_rag=True` (will execute RAG on unfixed code)
+6. **Knowledge Query Test**: Send "访问关系如何开权限" with `use_rag=True` (should execute RAG on unfixed code - this is correct behavior)
 
 **Expected Counterexamples**:
 - RAG retrieval is executed for access relation data queries (test cases 1-3)
@@ -255,6 +269,9 @@ END FOR
 3. **Inbound Query**: "哪些系统访问N-OA" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
 4. **Both Direction Query**: "N-CRM和N-OA之间有哪些访问关系" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
 5. **System Name Query**: "客户关系管理系统有哪些访问关系" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
+6. **IP Address Query**: "IP 为 10.0.1.10 的主机有哪些访问关系" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
+7. **Short IP Query**: "10.0.1.10 有哪些访问关系" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
+8. **IP Query Variant**: "查询 10.0.1.10 的访问关系" with `use_rag=True` → Should skip RAG, emit `rag_skipped`, call tool
 
 ### Preservation Checking
 
@@ -287,6 +304,7 @@ END FOR
   - System code patterns (N-CRM, P-DB-MAIN)
   - System name patterns (客户关系管理系统)
   - Deploy unit patterns (CRMJS_AP)
+  - IP address patterns (10.0.1.10, 192.168.1.1)
   - Relation query keywords (有哪些访问关系, 哪些系统访问)
   - Knowledge query keywords (如何, 流程, 权限)
   - Edge cases (mixed queries, no system identifier, no relation keywords)
@@ -298,10 +316,11 @@ END FOR
 
 ### Property-Based Tests
 
-- Generate random access relation data queries with various system identifiers and verify RAG is skipped
+- Generate random access relation data queries with various system identifiers (including IP addresses) and verify RAG is skipped
 - Generate random knowledge queries and verify RAG is executed
 - Generate random general questions and verify RAG behavior is preserved
 - Test across many message variations to ensure detection logic is robust
+- Generate random IP addresses and verify they are correctly detected as system identifiers
 
 ### Integration Tests
 
