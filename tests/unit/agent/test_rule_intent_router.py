@@ -63,3 +63,23 @@ def test_classify_waiting_user_session_as_hard_continue():
     assert result.route == "continue_diagnosis"
     assert result.certainty == "hard"
     assert result.reason == "session_waiting_user"
+def test_classify_access_relation_knowledge_query_stays_soft_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("访问关系如何开权限")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "soft"
+    assert result.reason == "general_network_question"
+    assert result.signals["is_access_relation_query"] is False
+
+
+def test_classify_access_relation_method_query_stays_soft_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("访问关系怎么配置")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "soft"
+    assert result.reason == "general_network_question"
+    assert result.signals["is_access_relation_query"] is False

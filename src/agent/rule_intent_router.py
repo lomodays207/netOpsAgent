@@ -13,6 +13,10 @@ ACCESS_RELATION_RE = re.compile(
     r"(访问关系|哪些系统访问|谁访问|被哪些系统访问|之间.*访问关系)",
     re.IGNORECASE,
 )
+ACCESS_RELATION_KNOWLEDGE_RE = re.compile(
+    r"(怎么|如何|为什么|什么是|步骤|原理|思路|办法|开权限|配置|申请|开通)",
+    re.IGNORECASE,
+)
 QUESTION_STYLE_RE = re.compile(
     r"(怎么|如何|为什么|什么是|哪些|步骤|原理|思路|办法|请问|\?)",
     re.IGNORECASE,
@@ -194,7 +198,10 @@ class RuleIntentRouter:
             "has_question_style": bool(QUESTION_STYLE_RE.search(text)),
             "has_tool_cmd": bool(TOOL_CMD_RE.search(text)),
             "has_port_or_service": bool(PORT_OR_SERVICE_RE.search(text)),
-            "is_access_relation_query": bool(ACCESS_RELATION_RE.search(text)),
+            "is_access_relation_query": bool(
+                ACCESS_RELATION_RE.search(text)
+                and not ACCESS_RELATION_KNOWLEDGE_RE.search(text)
+            ),
             "is_diagnostic_session": self._is_diagnostic_session(session),
         }
 

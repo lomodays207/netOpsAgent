@@ -5,6 +5,7 @@ import pytest
 
 from src.agent.hybrid_intent_router import HybridIntentRouter
 from src.agent.llm_intent_router import LLMIntentClassifier
+from src.agent.intent_types import LLMIntentResult
 from src.agent.rule_intent_router import RuleIntentRouter
 
 
@@ -29,6 +30,16 @@ class MappingLLMClient:
 
 def make_classifier(responder):
     return LLMIntentClassifier(llm_client=MappingLLMClient(responder))
+
+
+class RecordingLLMClassifier:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def classify(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.response
 
 
 def _json_response(route, confidence=0.91, reason="llm_reinforces_rule"):
@@ -86,6 +97,18 @@ def _json_response(route, confidence=0.91, reason="llm_reinforces_rule"):
             0,
         ),
         (
+            "访问关系如何开权限",
+            None,
+            lambda _: _json_response(
+                "general_chat",
+                confidence=0.94,
+                reason="knowledge_method_question",
+            ),
+            "general_chat",
+            "knowledge_method_question",
+            1,
+        ),
+        (
             "目标机器上有防火墙",
             make_session(status="waiting_user", source="general_chat", target="general_chat"),
             AssertionError("LLM should not be called for waiting-user sessions"),
@@ -120,17 +143,22 @@ def test_recent_messages_are_bounded_and_dict_safe_for_llm_prompt():
     recent_messages = [
         {"role": "user", "content": f"message-{index}"} for index in range(7)
     ]
+    llm_classifier = RecordingLLMClassifier(
+        LLMIntentResult(
+            route="general_chat",
+            confidence=0.9,
+            reason="ok",
+        )
+    )
     router = HybridIntentRouter(
         rule_router=RuleIntentRouter(),
-        llm_classifier=make_classifier(
-            lambda _: _json_response("general_chat", confidence=0.9, reason="ok")
-        ),
+        llm_classifier=llm_classifier,
     )
     session = make_session(messages=recent_messages)
 
     router.route_message("端口不通怎么排查", session=session)
 
-    prompt = json.loads(router.llm_classifier.llm_client.calls[0]["prompt"])
-    assert len(prompt["recent_messages"]) == 5
-    assert prompt["recent_messages"][0]["content"] == "message-2"
-    assert prompt["recent_messages"][-1]["content"] == "message-6"
+    assert len(llm_classifier.calls) == 1
+    assert len(llm_classifier.calls[0]["recent_messages"]) == 5
+    assert llm_classifier.calls[0]["recent_messages"][0]["content"] == "message-2"
+    assert llm_classifier.calls[0]["recent_messages"][-1]["content"] == "message-6"
