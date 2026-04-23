@@ -27,6 +27,20 @@ def test_classify_legacy_failure_phrase_as_hard_diagnosis():
     assert result.route == "start_diagnosis"
     assert result.certainty == "hard"
     assert result.signals["has_failure"] is True
+    assert result.signals["source"] == "web-01"
+    assert result.signals["target"] == "db-01"
+
+
+def test_classify_connected_unreachable_phrase_keeps_clean_endpoints():
+    router = RuleIntentRouter()
+
+    result = router.classify("web-01到db-01连不通")
+
+    assert result.route == "start_diagnosis"
+    assert result.certainty == "hard"
+    assert result.signals["has_failure"] is True
+    assert result.signals["source"] == "web-01"
+    assert result.signals["target"] == "db-01"
 
 
 def test_classify_ambiguous_issue_as_soft_clarify():
