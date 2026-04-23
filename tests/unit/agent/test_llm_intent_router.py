@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from src.agent.intent_types import RuleIntentResult
@@ -8,12 +10,14 @@ from src.agent.llm_intent_router import (
 
 
 class FakeLLMClient:
-    def __init__(self, response: str):
+    def __init__(self, response):
         self.response = response
         self.calls = []
 
     def invoke_with_json(self, **kwargs):
         self.calls.append(kwargs)
+        if isinstance(self.response, Exception):
+            raise self.response
         return self.response
 
 
@@ -56,13 +60,44 @@ def test_classify_valid_json_returns_llm_intent_result():
     assert result.confidence == 0.88
     assert result.detected_signals["has_question_style"] is True
     assert llm_client.calls[0]["temperature"] == 0.0
+
+    prompt = json.loads(llm_client.calls[0]["prompt"])
+    assert prompt["required_output_keys"] == ["route", "confidence", "reason"]
+    assert prompt["optional_output_keys"] == [
+        "clarify_message",
+        "needs_more_detail",
+        "detected_signals",
+    ]
     assert "old-1" not in llm_client.calls[0]["prompt"]
     assert "old-2" in llm_client.calls[0]["prompt"]
-    assert "required_output_keys" in llm_client.calls[0]["prompt"]
 
 
 def test_classify_invalid_json_raises_classification_error():
     classifier = LLMIntentClassifier(llm_client=FakeLLMClient("not json"))
+
+    with pytest.raises(LLMIntentClassificationError):
+        classifier.classify(
+            message="端口不通怎么排查？",
+            session=None,
+            recent_messages=[],
+            rule_result=make_rule_result(),
+        )
+
+
+def test_classify_llm_client_exception_raises_classification_error():
+    classifier = LLMIntentClassifier(llm_client=FakeLLMClient(RuntimeError("boom")))
+
+    with pytest.raises(LLMIntentClassificationError):
+        classifier.classify(
+            message="端口不通怎么排查？",
+            session=None,
+            recent_messages=[],
+            rule_result=make_rule_result(),
+        )
+
+
+def test_classify_non_string_response_raises_classification_error():
+    classifier = LLMIntentClassifier(llm_client=FakeLLMClient({"route": "general_chat"}))
 
     with pytest.raises(LLMIntentClassificationError):
         classifier.classify(
@@ -90,3 +125,27 @@ def test_classify_unknown_route_raises_classification_error():
             recent_messages=[],
             rule_result=make_rule_result(),
         )
+
+
+def test_build_prompt_truncates_current_and_recent_message_content():
+    llm_client = FakeLLMClient(
+        """{
+            "route": "general_chat",
+            "confidence": 0.88,
+            "reason": "question_style_general_network_topic"
+        }"""
+    )
+    classifier = LLMIntentClassifier(llm_client=llm_client)
+    long_current = "m" * 1001
+    long_recent = "r" * 501
+
+    classifier.classify(
+        message=long_current,
+        session=None,
+        recent_messages=[{"role": "user", "content": long_recent}],
+        rule_result=make_rule_result(),
+    )
+
+    prompt = json.loads(llm_client.calls[0]["prompt"])
+    assert prompt["message"] == "m" * 1000
+    assert prompt["recent_messages"][0]["content"] == "r" * 500

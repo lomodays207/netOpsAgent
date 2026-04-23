@@ -17,6 +17,9 @@ ALLOWED_ROUTES = (
     "clarify",
     "general_chat",
 )
+MAX_MESSAGE_CHARS = 1000
+MAX_RECENT_MESSAGE_CHARS = 500
+MAX_RECENT_MESSAGES = 5
 
 AllowedRoute = Literal[
     "start_diagnosis",
@@ -69,16 +72,19 @@ class LLMIntentClassifier:
             recent_messages=recent_messages,
             rule_result=rule_result,
         )
-        raw = self.llm_client.invoke_with_json(
-            prompt=prompt,
-            system_prompt=self.SYSTEM_PROMPT,
-            temperature=self.temperature,
-        )
+        try:
+            raw = self.llm_client.invoke_with_json(
+                prompt=prompt,
+                system_prompt=self.SYSTEM_PROMPT,
+                temperature=self.temperature,
+            )
+        except Exception as exc:
+            raise LLMIntentClassificationError("LLM intent classification call failed") from exc
 
         try:
             data = json.loads(raw)
             payload = _LLMIntentPayload.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except (json.JSONDecodeError, TypeError, ValidationError) as exc:
             raise LLMIntentClassificationError("Invalid LLM intent classification output") from exc
 
         return LLMIntentResult(
@@ -98,11 +104,12 @@ class LLMIntentClassifier:
         rule_result: RuleIntentResult,
     ) -> str:
         prompt_payload = {
-            "message": message,
+            "message": self._truncate_text(message, MAX_MESSAGE_CHARS),
             "session_status": getattr(session, "status", None),
             "is_diagnostic_session": self._is_diagnostic_session(session),
             "recent_messages": [
-                self._serialize_recent_message(item) for item in (recent_messages or [])[-5:]
+                self._serialize_recent_message(item)
+                for item in (recent_messages or [])[-MAX_RECENT_MESSAGES:]
             ],
             "rule_result": {
                 "route": rule_result.route,
@@ -117,6 +124,8 @@ class LLMIntentClassifier:
                 "route",
                 "confidence",
                 "reason",
+            ],
+            "optional_output_keys": [
                 "clarify_message",
                 "needs_more_detail",
                 "detected_signals",
@@ -128,13 +137,23 @@ class LLMIntentClassifier:
         if isinstance(message, dict):
             return {
                 "role": message.get("role"),
-                "content": message.get("content"),
+                "content": self._truncate_text(
+                    message.get("content"),
+                    MAX_RECENT_MESSAGE_CHARS,
+                ),
             }
 
         return {
             "role": getattr(message, "role", None),
-            "content": getattr(message, "content", str(message)),
+            "content": self._truncate_text(
+                getattr(message, "content", str(message)),
+                MAX_RECENT_MESSAGE_CHARS,
+            ),
         }
+
+    def _truncate_text(self, value: Any, max_chars: int) -> str:
+        text = "" if value is None else str(value)
+        return text[:max_chars]
 
     def _is_diagnostic_session(self, session: Optional[Any]) -> bool:
         if not session or not getattr(session, "task", None):
