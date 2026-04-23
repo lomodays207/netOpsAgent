@@ -40,6 +40,13 @@ class QueryCMDBInput(BaseModel):
     hosts: List[str] = Field(description="主机列表（IP或主机名），例如：['10.0.1.10', 'web-01']")
 
 
+class CheckPortAliveInput(BaseModel):
+    """Input schema for check_port_alive."""
+    host: str = Field(description="Target host IP address, for example: 10.0.2.20")
+    port: int = Field(description="TCP port to check, from 1 to 65535")
+    timeout: int = Field(default=30, description="Command timeout in seconds")
+
+
 class AskUserInput(BaseModel):
     """ask_user工具的输入参数"""
     question: str = Field(description="向用户提出的问题，例如：'请问目标服务器上是否有防火墙？'")
@@ -149,7 +156,21 @@ class LLMAgent:
             args_schema=QueryCMDBInput
         )
 
-        # 创建 ask_user 工具
+        # Create check_port_alive tool.
+        async def check_port_alive_func(host: str, port: int, timeout: int = 30) -> dict:
+            return await self.network_tools.check_port_alive(host, port, timeout)
+
+        check_port_alive_tool = StructuredTool.from_function(
+            coroutine=check_port_alive_func,
+            name="check_port_alive",
+            description=(
+                "Check whether a TCP port is listening on the specified target host IP. "
+                "Runs ss -tlnp on that host through the automation platform."
+            ),
+            args_schema=CheckPortAliveInput
+        )
+
+        # Create ask_user tool.
         async def ask_user_func(question: str) -> dict:
             # 抛出异常，暂停诊断流程，等待用户回答
             raise NeedUserInputException(question=question, context=self.current_context)
@@ -161,7 +182,7 @@ class LLMAgent:
             args_schema=AskUserInput
         )
 
-        return [execute_command_tool, query_cmdb_tool, ask_user_tool]
+        return [execute_command_tool, query_cmdb_tool, check_port_alive_tool, ask_user_tool]
 
     async def diagnose(
         self,
@@ -691,6 +712,14 @@ class LLMAgent:
                 hosts = arguments["hosts"]
 
                 result = await self.network_tools.query_cmdb(hosts)
+                return result
+
+            elif tool_name == "check_port_alive":
+                host = arguments["host"]
+                port = arguments["port"]
+                timeout = arguments.get("timeout", 30)
+
+                result = await self.network_tools.check_port_alive(host, port, timeout)
                 return result
 
             elif tool_name == "ask_user":

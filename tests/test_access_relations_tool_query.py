@@ -65,3 +65,31 @@ def test_query_access_relations_both_with_peer_system(db):
     assert result["total"] == 1
     assert result["items"][0]["src_system"] == "N-OA"
     assert result["items"][0]["dst_system"] == "N-CRM"
+
+
+def test_query_access_relations_resolves_chinese_name_with_generic_system_suffix(db):
+    asyncio.get_event_loop().run_until_complete(
+        db.create_access_asset(
+            {
+                "src_system": "N-NMS",
+                "src_system_name": "\u667a\u80fd\u7f51\u7ba1",
+                "src_deploy_unit": "NMS_AP",
+                "src_ip": "10.1.1.1",
+                "dst_system": "P-DST",
+                "dst_deploy_unit": "DST_AP",
+                "dst_ip": "10.2.2.2",
+                "protocol": "TCP",
+                "port": "443",
+            }
+        )
+    )
+
+    result = asyncio.get_event_loop().run_until_complete(
+        db.query_access_relations(
+            system_name="\u667a\u80fd\u7f51\u7ba1\u7cfb\u7edf",
+            direction="outbound",
+        )
+    )
+
+    assert result["total"] == 1
+    assert result["items"][0]["src_system"] == "N-NMS"

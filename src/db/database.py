@@ -455,6 +455,25 @@ class SessionDatabase:
             print(f"[SessionDatabase] 查询访问关系资产失败: {e}")
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
+    @staticmethod
+    def _system_name_candidates(system_name: str) -> List[str]:
+        """Build conservative Chinese system-name aliases for lookup."""
+        stripped = system_name.strip()
+        compact = "".join(stripped.split())
+        candidates: List[str] = []
+
+        for value in (stripped, compact):
+            if value and value not in candidates:
+                candidates.append(value)
+
+        for value in list(candidates):
+            if value.endswith("\u7cfb\u7edf") and len(value) > len("\u7cfb\u7edf"):
+                without_generic_suffix = value[:-len("\u7cfb\u7edf")].strip()
+                if without_generic_suffix and without_generic_suffix not in candidates:
+                    candidates.append(without_generic_suffix)
+
+        return candidates
+
     async def _resolve_system_codes(
         self,
         db: aiosqlite.Connection,
@@ -468,14 +487,27 @@ class SessionDatabase:
         if not system_name:
             return []
 
+        candidates = self._system_name_candidates(system_name)
+        if not candidates:
+            return []
+
+        conditions = []
+        params: List[Any] = []
+        for candidate in candidates:
+            conditions.append("src_system_name = ?")
+            params.append(candidate)
+        for candidate in candidates:
+            conditions.append("src_system_name LIKE ?")
+            params.append(f"%{candidate}%")
+
         async with db.execute(
-            """
+            f"""
             SELECT DISTINCT src_system
             FROM network_access_assets
-            WHERE src_system_name LIKE ?
+            WHERE {" OR ".join(conditions)}
             ORDER BY src_system
             """,
-            (f"%{system_name.strip()}%",)
+            params
         ) as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows if row and row[0]]

@@ -171,6 +171,67 @@ class NetworkTools:
             ]
         }
 
+    async def check_port_alive(
+        self,
+        host: str,
+        port: int,
+        timeout: int = 30
+    ) -> Dict:
+        """
+        Check whether a TCP port is listening on the specified host.
+
+        The check runs on the target host itself through the automation client.
+        """
+        command = f"ss -tlnp | grep ':{port}'"
+
+        if not isinstance(port, int) or isinstance(port, bool) or port < 1 or port > 65535:
+            return {
+                "success": False,
+                "port_alive": False,
+                "host": host,
+                "port": port,
+                "command": command,
+                "stdout": "",
+                "stderr": f"Invalid port: {port}. Port must be an integer from 1 to 65535.",
+                "exit_code": -1,
+                "execution_time": 0.0
+            }
+
+        try:
+            client = self._get_client_for_host(host)
+            result: CommandResult = await client.execute(
+                device=host,
+                command=command,
+                timeout=timeout
+            )
+            stdout = result.stdout.strip()
+            no_listener = result.exit_code == 1 and not stdout and not result.stderr.strip()
+
+            return {
+                "success": result.success or no_listener,
+                "port_alive": bool(stdout),
+                "host": result.host,
+                "port": port,
+                "command": result.command,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.exit_code,
+                "execution_time": result.execution_time
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "port_alive": False,
+                "host": host,
+                "port": port,
+                "command": command,
+                "stdout": "",
+                "stderr": f"Failed to check port: {str(e)}",
+                "exit_code": -1,
+                "execution_time": 0.0
+            }
+
     async def query_firewall_policy(
         self,
         host: str,
@@ -483,4 +544,3 @@ class NetworkTools:
             "failed_device_ip": last_reachable["ip"] if last_reachable else None,
             "analysis": f"Traceroute在第{first_timeout}跳超时，推断故障设备为{failed_device}" if first_timeout else "Traceroute正常完成"
         }
-

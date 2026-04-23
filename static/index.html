@@ -153,6 +153,56 @@
         </div>
     </template>
 
+    <!-- 证据来源面板模板 -->
+    <template id="evidence-sources-template">
+        <div class="evidence-sources-panel">
+            <div class="evidence-header">
+                <span class="evidence-icon">📚</span>
+                <span class="evidence-title">知识来源</span>
+                <span class="evidence-count"></span>
+            </div>
+            <div class="evidence-list"></div>
+        </div>
+    </template>
+
+    <!-- 证据卡片模板 -->
+    <template id="evidence-card-template">
+        <div class="evidence-card" data-doc-id="">
+            <div class="evidence-card-header">
+                <span class="evidence-filename"></span>
+                <span class="evidence-score-badge"></span>
+            </div>
+            <div class="evidence-score-bar">
+                <div class="evidence-score-fill"></div>
+            </div>
+            <div class="evidence-preview"></div>
+        </div>
+    </template>
+
+    <!-- 文档预览模态框模板 -->
+    <template id="document-preview-modal-template">
+        <div class="modal-overlay">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title"></h3>
+                    <button class="modal-close-btn" aria-label="关闭">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-loading">
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <p>加载中...</p>
+                    </div>
+                    <div class="modal-content-text"></div>
+                    <div class="modal-error"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/app.js?v=2.4"></script>
 </body>

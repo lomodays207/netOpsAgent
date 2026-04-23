@@ -9,11 +9,12 @@ API 文档：
 """
 import asyncio
 import uuid
+import time
 from datetime import datetime
 from typing import Dict, Optional
 import json
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1880,16 +1881,49 @@ async def general_chat_stream_v2(request: GeneralChatRequestWithRAG):
                     _, _, rag_chain = _init_rag_services()
                     if rag_chain.has_knowledge():
                         yield f"data: {json.dumps({'type': 'rag_start', 'message': '正在检索知识库...'}, ensure_ascii=False)}\n\n"
+                        
+                        # Task 10.2: Add monitoring logs - RAG retrieval timing
+                        rag_start_time = time.time()
+                        
                         _, system_prompt, retrieved_docs = rag_chain.build_enhanced_prompt(
                             request.message,
                             system_prompt_template=GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE
                         )
+                        
+                        rag_elapsed_time = (time.time() - rag_start_time) * 1000  # Convert to milliseconds
+                        print(f"[MONITORING] RAG检索耗时: {rag_elapsed_time:.2f}ms, 返回文档数: {len(retrieved_docs) if retrieved_docs else 0}")
+                        
                         if retrieved_docs:
                             yield f"data: {json.dumps({'type': 'rag_result', 'count': len(retrieved_docs), 'sources': [d.get('metadata', {}).get('filename', '未知') for d in retrieved_docs]}, ensure_ascii=False)}\n\n"
+                            
+                            # Task 3.1: Send evidence_sources event (if feature flag is enabled)
+                            # Task 11.2: Check feature flag
+                            enable_evidence_sources = os.getenv("ENABLE_EVIDENCE_SOURCES", "true").lower() == "true"
+                            
+                            if enable_evidence_sources:
+                                # Limit to maximum 5 sources
+                                limited_docs = retrieved_docs[:5]
+                                evidence_sources = []
+                                for doc in limited_docs:
+                                    source = {
+                                        "id": doc.get("id", ""),
+                                        "filename": doc.get("metadata", {}).get("filename", "未知"),
+                                        "relevance_score": doc.get("relevance_score", 0.0),
+                                        "preview": doc.get("preview", ""),
+                                        "metadata": doc.get("metadata", {})
+                                    }
+                                    evidence_sources.append(source)
+                                
+                                # Task 10.2: Log evidence sources count
+                                print(f"[MONITORING] 发送证据来源数量: {len(evidence_sources)}")
+                                
+                                yield f"data: {json.dumps({'type': 'evidence_sources', 'sources': evidence_sources}, ensure_ascii=False)}\n\n"
                         else:
                             yield f"data: {json.dumps({'type': 'rag_result', 'count': 0, 'message': '知识库中未找到相关内容'}, ensure_ascii=False)}\n\n"
                 except Exception as e:
+                    # Task 10.3: Implement fault tolerance - log error but continue
                     print(f"[API] RAG检索失败: {e}")
+                    print(f"[MONITORING] RAG检索异常，继续处理用户请求")
                     yield f"data: {json.dumps({'type': 'rag_error', 'message': f'知识库检索失败: {str(e)}'}, ensure_ascii=False)}\n\n"
 
             await session_manager.add_message(session_id, "user", request.message)
@@ -2033,6 +2067,135 @@ async def delete_access_asset_route(asset_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+# ===== 文档详情查询 API =====
+
+from collections import defaultdict
+from datetime import datetime as dt, timedelta
+from typing import Dict as TypeDict
+
+# 简单的内存速率限制器
+_rate_limiter: TypeDict[str, list] = defaultdict(list)
+_RATE_LIMIT_WINDOW = 60  # 60秒窗口
+_RATE_LIMIT_MAX_REQUESTS = 10  # 最多10次请求
+
+
+def check_rate_limit(client_id: str) -> bool:
+    """
+    检查速率限制
+    
+    Args:
+        client_id: 客户端标识（IP地址或用户ID）
+        
+    Returns:
+        True if allowed, False if rate limit exceeded
+    """
+    now = dt.now()
+    # 清理过期的请求记录
+    _rate_limiter[client_id] = [
+        timestamp for timestamp in _rate_limiter[client_id]
+        if now - timestamp < timedelta(seconds=_RATE_LIMIT_WINDOW)
+    ]
+    
+    # 检查是否超过限制
+    if len(_rate_limiter[client_id]) >= _RATE_LIMIT_MAX_REQUESTS:
+        return False
+    
+    # 记录本次请求
+    _rate_limiter[client_id].append(now)
+    return True
+
+
+@app.get("/api/v1/knowledge/document/{doc_id}")
+async def get_document_detail(doc_id: str, request: Request):
+    """
+    获取文档详情（用于证据来源预览）
+    
+    ### 路径参数：
+    - doc_id: 文档ID（ChromaDB的文档ID）
+    
+    ### 响应示例（成功）：
+    ```json
+    {
+        "status": "success",
+        "data": {
+            "id": "doc_123",
+            "filename": "访问关系开通流程.txt",
+            "content": "完整文档内容...",
+            "metadata": {
+                "source": "docs/knowledge/",
+                "created_at": "2026-01-15T10:30:00Z",
+                "file_size": 2048,
+                "doc_id": "doc_123"
+            }
+        }
+    }
+    ```
+    
+    ### 响应示例（文档不存在）：
+    ```json
+    {
+        "status": "error",
+        "message": "文档不存在"
+    }
+    ```
+    
+    ### 响应示例（文档过大）：
+    ```json
+    {
+        "status": "error",
+        "message": "文档过大，无法加载（超过10MB限制）"
+    }
+    ```
+    
+    ### 速率限制：
+    - 每分钟最多10次请求
+    - 超过限制返回429错误
+    """
+    try:
+        # Task 10.2: Add monitoring logs - document query timing
+        query_start_time = time.time()
+        
+        # 获取客户端IP地址作为速率限制标识
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # 检查速率限制
+        if not check_rate_limit(client_ip):
+            raise HTTPException(
+                status_code=429,
+                detail="请求过于频繁，请稍后再试（每分钟最多10次请求）"
+            )
+        
+        # 从文档服务获取文档
+        from .rag.document_service import get_document_by_id
+        
+        document = get_document_by_id(doc_id)
+        
+        query_elapsed_time = (time.time() - query_start_time) * 1000  # Convert to milliseconds
+        print(f"[MONITORING] 文档查询耗时: {query_elapsed_time:.2f}ms, 文档ID: {doc_id}")
+        
+        if document is None:
+            raise HTTPException(
+                status_code=404,
+                detail="文档不存在"
+            )
+        
+        return {
+            "status": "success",
+            "data": document
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] 获取文档详情失败: {doc_id}, 错误: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取文档详情失败: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

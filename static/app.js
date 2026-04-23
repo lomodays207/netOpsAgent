@@ -6,6 +6,37 @@ let currentStreamingMessage = null;
 let currentStreamingText = '';
 let currentToolRunId = null;
 
+/**
+ * @typedef {Object} EvidenceSource
+ * @property {string} id - 文档唯一标识
+ * @property {string} filename - 文件名
+ * @property {number} relevance_score - 相关度评分 (0-1)
+ * @property {string} preview - 预览文本（前200字符）
+ * @property {Object} [metadata] - 元数据（可选）
+ * @property {string} [metadata.source] - 来源路径
+ * @property {string} [metadata.created_at] - 创建时间
+ * @property {number} [metadata.file_size] - 文件大小
+ */
+
+/**
+ * @typedef {Object} DocumentDetail
+ * @property {string} id - 文档唯一标识
+ * @property {string} filename - 文件名
+ * @property {string} content - 完整内容
+ * @property {Object} [metadata] - 元数据
+ * @property {string} [metadata.source] - 来源路径
+ * @property {string} [metadata.created_at] - 创建时间
+ * @property {number} [metadata.file_size] - 文件大小
+ */
+
+/**
+ * @typedef {Object} ChatMessage
+ * @property {string} role - 消息角色 ('user' | 'assistant')
+ * @property {string} content - 消息内容
+ * @property {string} timestamp - 时间戳
+ * @property {EvidenceSource[]} [evidenceSources] - 证据来源列表（可选）
+ */
+
 const QUICK_PROMPTS = [
     {
         category: '网络故障诊断',
@@ -149,7 +180,7 @@ async function restoreSession() {
             if (msg.role === 'user') {
                 addUserMessage(msg.content, false); // false = 不保存到 localStorage
             } else if (msg.role === 'assistant') {
-                addAssistantMessage(msg.content, false);
+                addAssistantMessageWithEvidence(msg.content, msg.evidenceSources, false);
             }
         });
 
@@ -250,11 +281,22 @@ function saveSession() {
 }
 
 // 保存消息到 localStorage
-function saveMessage(role, content) {
+function saveMessage(role, content, evidenceSources = null) {
     const savedMessages = localStorage.getItem('chatMessages');
     let messages = savedMessages ? JSON.parse(savedMessages) : [];
 
-    messages.push({ role, content, timestamp: new Date().toISOString() });
+    const message = { 
+        role, 
+        content, 
+        timestamp: new Date().toISOString()
+    };
+    
+    // 如果有证据来源，添加到消息对象中
+    if (evidenceSources && Array.isArray(evidenceSources) && evidenceSources.length > 0) {
+        message.evidenceSources = evidenceSources;
+    }
+
+    messages.push(message);
 
     // 限制保存的消息数量（最多100条）
     if (messages.length > 100) {
@@ -580,6 +622,9 @@ function handleEvent(event) {
         case 'rag_error':
             handleRagErrorEvent(event);
             break;
+        case 'evidence_sources':
+            handleEvidenceSourcesEvent(event);
+            break;
         case 'tool_start':
             handleToolStartEvent(event);
             break;
@@ -668,7 +713,9 @@ function handleAskUserEvent(event) {
 function handleCompleteEvent(event) {
     if (!event.report) {
         if (currentStreamingText) {
-            saveMessage('assistant', currentStreamingText);
+            // 提取证据来源（如果存在）
+            const evidenceSources = currentStreamingMessage?.evidenceSources || null;
+            saveMessage('assistant', currentStreamingText, evidenceSources);
         }
         resetStreamingAssistantMessage();
         currentAssistantMessage = null;
@@ -706,6 +753,47 @@ function handleRagResultEvent(event) {
 
 function handleRagErrorEvent(event) {
     addSystemMessage('[RAG] ' + (event.message || 'Knowledge retrieval failed.'));
+}
+
+function handleEvidenceSourcesEvent(event) {
+    console.log('📚 收到证据来源事件:', event);
+    
+    // 确保有证据来源数据
+    if (!event.sources || !Array.isArray(event.sources) || event.sources.length === 0) {
+        console.warn('证据来源事件没有有效的sources数据');
+        return;
+    }
+    
+    // 如果当前没有助手消息，创建一个
+    if (!currentStreamingMessage && !currentAssistantMessage) {
+        currentStreamingMessage = createAssistantMessage();
+    }
+    
+    // 获取当前消息元素
+    const messageEl = currentStreamingMessage || currentAssistantMessage;
+    if (!messageEl) {
+        console.warn('无法找到当前消息元素来附加证据来源');
+        return;
+    }
+    
+    // 渲染证据来源面板
+    const evidencePanel = renderEvidenceSourcePanel(event.sources);
+    if (evidencePanel) {
+        // 将证据面板添加到消息内容中
+        const messageContent = messageEl.querySelector('.message-content');
+        if (messageContent) {
+            messageContent.appendChild(evidencePanel);
+            scrollToBottom();
+            console.log('✅ 证据来源面板已渲染');
+        }
+    }
+    
+    // 将证据来源关联到当前消息对象（用于持久化）
+    // 注意：这里我们将证据来源存储在消息元素的数据属性中
+    // 在保存消息时需要提取这些数据
+    if (messageEl) {
+        messageEl.evidenceSources = event.sources;
+    }
 }
 
 function handleContentEvent(event) {
@@ -768,6 +856,45 @@ function addAssistantMessage(text, shouldSave = true) {
     // 保存到 localStorage
     if (shouldSave) {
         saveMessage('assistant', text);
+    }
+
+    return messageEl;
+}
+
+/**
+ * 添加带证据来源的助手消息（用于历史消息恢复）
+ * @param {string} text - 消息文本
+ * @param {EvidenceSource[]} evidenceSources - 证据来源列表
+ * @param {boolean} shouldSave - 是否保存到localStorage
+ * @returns {HTMLElement} 消息元素
+ */
+function addAssistantMessageWithEvidence(text, evidenceSources, shouldSave = true) {
+    const messageEl = document.createElement('div');
+    messageEl.className = 'message assistant-message';
+    messageEl.innerHTML = `
+        <div class="message-avatar">🤖</div>
+        <div class="message-content">
+            <div class="message-text">${marked.parse(text)}</div>
+        </div>
+    `;
+    messagesContainer.appendChild(messageEl);
+    
+    // 如果有证据来源，渲染证据面板
+    if (evidenceSources && Array.isArray(evidenceSources) && evidenceSources.length > 0) {
+        const evidencePanel = renderEvidenceSourcePanel(evidenceSources);
+        if (evidencePanel) {
+            const messageContent = messageEl.querySelector('.message-content');
+            messageContent.appendChild(evidencePanel);
+        }
+        // 存储证据来源到元素上（用于后续可能的操作）
+        messageEl.evidenceSources = evidenceSources;
+    }
+    
+    scrollToBottom();
+
+    // 保存到 localStorage
+    if (shouldSave) {
+        saveMessage('assistant', text, evidenceSources);
     }
 
     return messageEl;
@@ -1179,4 +1306,166 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * 渲染证据来源面板
+ * @param {EvidenceSource[]} sources - 证据来源列表
+ * @returns {DocumentFragment} 证据来源面板DOM片段
+ */
+function renderEvidenceSourcePanel(sources) {
+    if (!Array.isArray(sources) || sources.length === 0) {
+        return null;
+    }
+
+    // 按相关度评分从高到低排序
+    const sortedSources = [...sources].sort((a, b) => b.relevance_score - a.relevance_score);
+
+    const template = document.getElementById('evidence-sources-template');
+    const panel = template.content.cloneNode(true);
+
+    // 设置证据来源数量
+    const countEl = panel.querySelector('.evidence-count');
+    countEl.textContent = `(${sortedSources.length})`;
+
+    // 渲染证据卡片列表
+    const listEl = panel.querySelector('.evidence-list');
+    sortedSources.forEach(source => {
+        const card = renderEvidenceCard(source);
+        listEl.appendChild(card);
+    });
+
+    return panel;
+}
+
+/**
+ * 渲染单个证据卡片
+ * @param {EvidenceSource} source - 证据来源对象
+ * @returns {DocumentFragment} 证据卡片DOM片段
+ */
+function renderEvidenceCard(source) {
+    const template = document.getElementById('evidence-card-template');
+    const card = template.content.cloneNode(true);
+
+    const cardEl = card.querySelector('.evidence-card');
+    cardEl.setAttribute('data-doc-id', source.id);
+
+    // 设置文件名
+    const filenameEl = card.querySelector('.evidence-filename');
+    filenameEl.textContent = source.filename;
+
+    // 设置相关度评分徽章
+    const scoreBadgeEl = card.querySelector('.evidence-score-badge');
+    const scorePercent = Math.round(source.relevance_score * 100);
+    scoreBadgeEl.textContent = `${scorePercent}%`;
+
+    // 根据评分范围设置颜色类
+    if (source.relevance_score > 0.7) {
+        cardEl.classList.add('score-high');
+    } else if (source.relevance_score >= 0.4) {
+        cardEl.classList.add('score-medium');
+    } else {
+        cardEl.classList.add('score-low');
+    }
+
+    // 设置相关度评分进度条
+    const scoreFillEl = card.querySelector('.evidence-score-fill');
+    scoreFillEl.style.width = `${scorePercent}%`;
+
+    // 设置预览文本
+    const previewEl = card.querySelector('.evidence-preview');
+    previewEl.textContent = source.preview;
+
+    // 添加点击事件
+    cardEl.addEventListener('click', () => {
+        showDocumentPreview(source.id);
+    });
+
+    return card;
+}
+
+/**
+ * 显示文档预览模态框
+ * @param {string} docId - 文档ID
+ */
+async function showDocumentPreview(docId) {
+    // Task 10.2: Log evidence card click
+    console.log('[MONITORING] 证据卡片点击, 文档ID:', docId);
+    
+    const template = document.getElementById('document-preview-modal-template');
+    const modal = template.content.cloneNode(true);
+    const modalEl = modal.querySelector('.modal-overlay');
+
+    // 添加到页面
+    document.body.appendChild(modalEl);
+
+    const closeBtn = modalEl.querySelector('.modal-close-btn');
+    const loadingEl = modalEl.querySelector('.modal-loading');
+    const contentEl = modalEl.querySelector('.modal-content-text');
+    const errorEl = modalEl.querySelector('.modal-error');
+
+    // 关闭按钮事件
+    const closeModal = () => {
+        modalEl.remove();
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    modalEl.addEventListener('click', (e) => {
+        if (e.target === modalEl) {
+            closeModal();
+        }
+    });
+
+    // 显示加载指示器
+    loadingEl.style.display = 'flex';
+    contentEl.style.display = 'none';
+    errorEl.style.display = 'none';
+
+    try {
+        // Task 10.2: Track document preview load time
+        const loadStartTime = performance.now();
+        
+        // 发送GET请求获取文档内容
+        const response = await fetch(`/api/v1/knowledge/document/${docId}`);
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error('文档不存在');
+            } else if (response.status === 429) {
+                throw new Error('请求过于频繁，请稍后重试');
+            } else {
+                throw new Error('无法加载文档内容');
+            }
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'success' && data.data) {
+            const doc = data.data;
+
+            // 设置标题
+            const titleEl = modalEl.querySelector('.modal-title');
+            titleEl.textContent = doc.filename;
+
+            // 设置内容（HTML转义）
+            contentEl.textContent = doc.content;
+
+            // 显示内容
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+            
+            // Task 10.2: Log document preview load time
+            const loadTime = performance.now() - loadStartTime;
+            console.log(`[MONITORING] 文档预览加载时间: ${loadTime.toFixed(2)}ms, 文档ID: ${docId}`);
+        } else {
+            throw new Error(data.message || '无法加载文档内容');
+        }
+    } catch (error) {
+        console.error('加载文档失败:', error);
+
+        // 显示错误信息
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = error.message || '请求超时，请重试';
+    }
 }

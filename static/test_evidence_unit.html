@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>证据来源单元测试</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            padding: 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+            font-family: monospace;
+        }
+        .test-results {
+            margin-top: 2rem;
+        }
+        .test-case {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        .test-case.pass {
+            background: #dcfce7;
+            border-color: #10b981;
+        }
+        .test-case.fail {
+            background: #fee2e2;
+            border-color: #ef4444;
+        }
+        .test-name {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .test-message {
+            font-size: 0.9rem;
+            color: #475569;
+        }
+        .summary {
+            padding: 1rem;
+            background: #f1f5f9;
+            border-radius: 6px;
+            margin-bottom: 2rem;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+    </style>
+</head>
+<body>
+    <h1>证据来源展示功能 - 单元测试</h1>
+    <button onclick="runAllTests()">运行所有测试</button>
+    
+    <div class="summary" id="summary" style="display: none;">
+        <div id="summary-text"></div>
+    </div>
+
+    <div class="test-results" id="test-results"></div>
+
+    <!-- 引入模板 -->
+    <template id="evidence-sources-template">
+        <div class="evidence-sources-panel">
+            <div class="evidence-header">
+                <span class="evidence-icon">📚</span>
+                <span class="evidence-title">知识来源</span>
+                <span class="evidence-count"></span>
+            </div>
+            <div class="evidence-list"></div>
+        </div>
+    </template>
+
+    <template id="evidence-card-template">
+        <div class="evidence-card" data-doc-id="">
+            <div class="evidence-card-header">
+                <span class="evidence-filename"></span>
+                <span class="evidence-score-badge"></span>
+            </div>
+            <div class="evidence-score-bar">
+                <div class="evidence-score-fill"></div>
+            </div>
+            <div class="evidence-preview"></div>
+        </div>
+    </template>
+
+    <script>
+        // 复制核心函数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderEvidenceSourcePanel(sources) {
+            if (!Array.isArray(sources) || sources.length === 0) {
+                return null;
+            }
+
+            const sortedSources = [...sources].sort((a, b) => b.relevance_score - a.relevance_score);
+
+            const template = document.getElementById('evidence-sources-template');
+            const panel = template.content.cloneNode(true);
+
+            const countEl = panel.querySelector('.evidence-count');
+            countEl.textContent = `(${sortedSources.length})`;
+
+            const listEl = panel.querySelector('.evidence-list');
+            sortedSources.forEach(source => {
+                const card = renderEvidenceCard(source);
+                listEl.appendChild(card);
+            });
+
+            return panel;
+        }
+
+        function renderEvidenceCard(source) {
+            const template = document.getElementById('evidence-card-template');
+            const card = template.content.cloneNode(true);
+
+            const cardEl = card.querySelector('.evidence-card');
+            cardEl.setAttribute('data-doc-id', source.id);
+
+            const filenameEl = card.querySelector('.evidence-filename');
+            filenameEl.textContent = source.filename;
+
+            const scoreBadgeEl = card.querySelector('.evidence-score-badge');
+            const scorePercent = Math.round(source.relevance_score * 100);
+            scoreBadgeEl.textContent = `${scorePercent}%`;
+
+            if (source.relevance_score > 0.7) {
+                cardEl.classList.add('score-high');
+            } else if (source.relevance_score >= 0.4) {
+                cardEl.classList.add('score-medium');
+            } else {
+                cardEl.classList.add('score-low');
+            }
+
+            const scoreFillEl = card.querySelector('.evidence-score-fill');
+            scoreFillEl.style.width = `${scorePercent}%`;
+
+            const previewEl = card.querySelector('.evidence-preview');
+            previewEl.textContent = source.preview;
+
+            return card;
+        }
+
+        // 测试框架
+        const testResults = [];
+
+        function assert(condition, message) {
+            if (!condition) {
+                throw new Error(message || 'Assertion failed');
+            }
+        }
+
+        function assertEquals(actual, expected, message) {
+            if (actual !== expected) {
+                throw new Error(`${message || 'Assertion failed'}: expected ${expected}, got ${actual}`);
+            }
+        }
+
+        function assertContains(str, substring, message) {
+            if (!str.includes(substring)) {
+                throw new Error(`${message || 'Assertion failed'}: "${str}" does not contain "${substring}"`);
+            }
+        }
+
+        function test(name, fn) {
+            try {
+                fn();
+                testResults.push({ name, pass: true, message: 'Test passed' });
+            } catch (error) {
+                testResults.push({ name, pass: false, message: error.message });
+            }
+        }
+
+        // 测试用例
+        function testEvidencePanelRendersCorrectly() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'test.txt',
+                    relevance_score: 0.85,
+                    preview: 'Test preview'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            assert(panel !== null, 'Panel should not be null');
+
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const countEl = container.querySelector('.evidence-count');
+            assertEquals(countEl.textContent, '(1)', 'Count should be (1)');
+
+            const cards = container.querySelectorAll('.evidence-card');
+            assertEquals(cards.length, 1, 'Should have 1 card');
+        }
+
+        function testEmptySourcesReturnsNull() {
+            const panel1 = renderEvidenceSourcePanel([]);
+            assert(panel1 === null, 'Empty array should return null');
+
+            const panel2 = renderEvidenceSourcePanel(null);
+            assert(panel2 === null, 'Null should return null');
+        }
+
+        function testRelevanceScoreVisualization() {
+            const sources = [
+                {
+                    id: 'doc_high',
+                    filename: 'high.txt',
+                    relevance_score: 0.85,
+                    preview: 'High score'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const card = container.querySelector('.evidence-card');
+            const badge = card.querySelector('.evidence-score-badge');
+            const fill = card.querySelector('.evidence-score-fill');
+
+            assertEquals(badge.textContent, '85%', 'Badge should show 85%');
+            assertEquals(fill.style.width, '85%', 'Fill width should be 85%');
+        }
+
+        function testScoreColorHigh() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'test.txt',
+                    relevance_score: 0.95,
+                    preview: 'Test'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const card = container.querySelector('.evidence-card');
+            assert(card.classList.contains('score-high'), 'Card should have score-high class');
+        }
+
+        function testScoreColorMedium() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'test.txt',
+                    relevance_score: 0.55,
+                    preview: 'Test'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const card = container.querySelector('.evidence-card');
+            assert(card.classList.contains('score-medium'), 'Card should have score-medium class');
+        }
+
+        function testScoreColorLow() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'test.txt',
+                    relevance_score: 0.25,
+                    preview: 'Test'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const card = container.querySelector('.evidence-card');
+            assert(card.classList.contains('score-low'), 'Card should have score-low class');
+        }
+
+        function testEvidenceSourcesSorting() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'low.txt',
+                    relevance_score: 0.3,
+                    preview: 'Low'
+                },
+                {
+                    id: 'doc_2',
+                    filename: 'high.txt',
+                    relevance_score: 0.9,
+                    preview: 'High'
+                },
+                {
+                    id: 'doc_3',
+                    filename: 'medium.txt',
+                    relevance_score: 0.6,
+                    preview: 'Medium'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const cards = container.querySelectorAll('.evidence-card');
+            const filenames = Array.from(cards).map(card => 
+                card.querySelector('.evidence-filename').textContent
+            );
+
+            assertEquals(filenames[0], 'high.txt', 'First should be high.txt');
+            assertEquals(filenames[1], 'medium.txt', 'Second should be medium.txt');
+            assertEquals(filenames[2], 'low.txt', 'Third should be low.txt');
+        }
+
+        function testCardDisplaysAllFields() {
+            const sources = [
+                {
+                    id: 'doc_123',
+                    filename: 'test_file.txt',
+                    relevance_score: 0.75,
+                    preview: 'This is a preview text'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const card = container.querySelector('.evidence-card');
+            
+            assertEquals(card.getAttribute('data-doc-id'), 'doc_123', 'Doc ID should be set');
+            
+            const filename = card.querySelector('.evidence-filename').textContent;
+            assertEquals(filename, 'test_file.txt', 'Filename should match');
+
+            const preview = card.querySelector('.evidence-preview').textContent;
+            assertEquals(preview, 'This is a preview text', 'Preview should match');
+        }
+
+        function testHtmlEscaping() {
+            const maliciousText = '<script>alert("XSS")</script>';
+            const escaped = escapeHtml(maliciousText);
+            
+            assert(!escaped.includes('<script>'), 'Should not contain script tag');
+            assertContains(escaped, '&lt;script&gt;', 'Should contain escaped script tag');
+        }
+
+        function testHtmlEscapingInPreview() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: 'test.txt',
+                    relevance_score: 0.5,
+                    preview: '<img src=x onerror=alert(1)>'
+                }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const preview = container.querySelector('.evidence-preview');
+            // textContent automatically escapes HTML
+            assert(!preview.innerHTML.includes('<img'), 'Should not contain img tag');
+        }
+
+        function testMultipleSources() {
+            const sources = [
+                { id: 'doc_1', filename: 'file1.txt', relevance_score: 0.8, preview: 'Preview 1' },
+                { id: 'doc_2', filename: 'file2.txt', relevance_score: 0.6, preview: 'Preview 2' },
+                { id: 'doc_3', filename: 'file3.txt', relevance_score: 0.4, preview: 'Preview 3' }
+            ];
+
+            const panel = renderEvidenceSourcePanel(sources);
+            const container = document.createElement('div');
+            container.appendChild(panel);
+
+            const countEl = container.querySelector('.evidence-count');
+            assertEquals(countEl.textContent, '(3)', 'Count should be (3)');
+
+            const cards = container.querySelectorAll('.evidence-card');
+            assertEquals(cards.length, 3, 'Should have 3 cards');
+        }
+
+        // 运行所有测试
+        function runAllTests() {
+            testResults.length = 0;
+
+            test('Test 1: 证据来源面板正确渲染', testEvidencePanelRendersCorrectly);
+            test('Test 2: 空证据列表返回null', testEmptySourcesReturnsNull);
+            test('Test 3: 相关度评分可视化', testRelevanceScoreVisualization);
+            test('Test 4: 高相关度颜色标识', testScoreColorHigh);
+            test('Test 5: 中等相关度颜色标识', testScoreColorMedium);
+            test('Test 6: 低相关度颜色标识', testScoreColorLow);
+            test('Test 7: 证据来源按评分排序', testEvidenceSourcesSorting);
+            test('Test 8: 卡片显示所有字段', testCardDisplaysAllFields);
+            test('Test 9: HTML内容转义', testHtmlEscaping);
+            test('Test 10: 预览文本HTML转义', testHtmlEscapingInPreview);
+            test('Test 11: 多个证据来源渲染', testMultipleSources);
+
+            displayResults();
+        }
+
+        function displayResults() {
+            const resultsContainer = document.getElementById('test-results');
+            resultsContainer.innerHTML = '';
+
+            const passed = testResults.filter(r => r.pass).length;
+            const failed = testResults.filter(r => !r.pass).length;
+            const total = testResults.length;
+
+            const summary = document.getElementById('summary');
+            const summaryText = document.getElementById('summary-text');
+            summary.style.display = 'block';
+            summaryText.innerHTML = `
+                <strong>测试结果:</strong> ${passed}/${total} 通过, ${failed} 失败
+                ${failed === 0 ? '✅ 所有测试通过!' : '❌ 有测试失败'}
+            `;
+
+            testResults.forEach(result => {
+                const testCase = document.createElement('div');
+                testCase.className = `test-case ${result.pass ? 'pass' : 'fail'}`;
+                testCase.innerHTML = `
+                    <div class="test-name">${result.pass ? '✅' : '❌'} ${result.name}</div>
+                    <div class="test-message">${result.message}</div>
+                `;
+                resultsContainer.appendChild(testCase);
+            });
+        }
+    </script>
+</body>
+</html>

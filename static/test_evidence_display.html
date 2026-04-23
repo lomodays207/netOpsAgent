@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>证据来源展示测试</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            padding: 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-bottom: 1rem;
+            color: #1e293b;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 0.5rem;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+    </style>
+</head>
+<body>
+    <h1>证据来源展示功能测试</h1>
+
+    <div class="test-section">
+        <h2>测试 1: 渲染证据来源面板</h2>
+        <button onclick="testRenderEvidencePanel()">渲染证据面板</button>
+        <div id="test-panel-container"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>测试 2: 不同相关度评分的颜色</h2>
+        <button onclick="testScoreColors()">测试评分颜色</button>
+        <div id="test-colors-container"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>测试 3: 证据来源排序</h2>
+        <button onclick="testSorting()">测试排序</button>
+        <div id="test-sorting-container"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>测试 4: 文档预览模态框</h2>
+        <button onclick="testDocumentPreview()">打开文档预览</button>
+        <p style="color: #64748b; font-size: 0.9rem;">注意: 需要后端API支持才能加载真实文档</p>
+    </div>
+
+    <!-- 引入模板 -->
+    <template id="evidence-sources-template">
+        <div class="evidence-sources-panel">
+            <div class="evidence-header">
+                <span class="evidence-icon">📚</span>
+                <span class="evidence-title">知识来源</span>
+                <span class="evidence-count"></span>
+            </div>
+            <div class="evidence-list"></div>
+        </div>
+    </template>
+
+    <template id="evidence-card-template">
+        <div class="evidence-card" data-doc-id="">
+            <div class="evidence-card-header">
+                <span class="evidence-filename"></span>
+                <span class="evidence-score-badge"></span>
+            </div>
+            <div class="evidence-score-bar">
+                <div class="evidence-score-fill"></div>
+            </div>
+            <div class="evidence-preview"></div>
+        </div>
+    </template>
+
+    <template id="document-preview-modal-template">
+        <div class="modal-overlay">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title"></h3>
+                    <button class="modal-close-btn" aria-label="关闭">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-loading">
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <p>加载中...</p>
+                    </div>
+                    <div class="modal-content-text"></div>
+                    <div class="modal-error"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        // 复制 app.js 中的函数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderEvidenceSourcePanel(sources) {
+            if (!Array.isArray(sources) || sources.length === 0) {
+                return null;
+            }
+
+            const sortedSources = [...sources].sort((a, b) => b.relevance_score - a.relevance_score);
+
+            const template = document.getElementById('evidence-sources-template');
+            const panel = template.content.cloneNode(true);
+
+            const countEl = panel.querySelector('.evidence-count');
+            countEl.textContent = `(${sortedSources.length})`;
+
+            const listEl = panel.querySelector('.evidence-list');
+            sortedSources.forEach(source => {
+                const card = renderEvidenceCard(source);
+                listEl.appendChild(card);
+            });
+
+            return panel;
+        }
+
+        function renderEvidenceCard(source) {
+            const template = document.getElementById('evidence-card-template');
+            const card = template.content.cloneNode(true);
+
+            const cardEl = card.querySelector('.evidence-card');
+            cardEl.setAttribute('data-doc-id', source.id);
+
+            const filenameEl = card.querySelector('.evidence-filename');
+            filenameEl.textContent = source.filename;
+
+            const scoreBadgeEl = card.querySelector('.evidence-score-badge');
+            const scorePercent = Math.round(source.relevance_score * 100);
+            scoreBadgeEl.textContent = `${scorePercent}%`;
+
+            if (source.relevance_score > 0.7) {
+                cardEl.classList.add('score-high');
+            } else if (source.relevance_score >= 0.4) {
+                cardEl.classList.add('score-medium');
+            } else {
+                cardEl.classList.add('score-low');
+            }
+
+            const scoreFillEl = card.querySelector('.evidence-score-fill');
+            scoreFillEl.style.width = `${scorePercent}%`;
+
+            const previewEl = card.querySelector('.evidence-preview');
+            previewEl.textContent = source.preview;
+
+            cardEl.addEventListener('click', () => {
+                showDocumentPreview(source.id);
+            });
+
+            return card;
+        }
+
+        async function showDocumentPreview(docId) {
+            const template = document.getElementById('document-preview-modal-template');
+            const modal = template.content.cloneNode(true);
+            const modalEl = modal.querySelector('.modal-overlay');
+
+            document.body.appendChild(modalEl);
+
+            const closeBtn = modalEl.querySelector('.modal-close-btn');
+            const loadingEl = modalEl.querySelector('.modal-loading');
+            const contentEl = modalEl.querySelector('.modal-content-text');
+            const errorEl = modalEl.querySelector('.modal-error');
+
+            const closeModal = () => {
+                modalEl.remove();
+            };
+
+            closeBtn.addEventListener('click', closeModal);
+            modalEl.addEventListener('click', (e) => {
+                if (e.target === modalEl) {
+                    closeModal();
+                }
+            });
+
+            loadingEl.style.display = 'flex';
+            contentEl.style.display = 'none';
+            errorEl.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/v1/knowledge/document/${docId}`);
+
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error('文档不存在');
+                    } else if (response.status === 429) {
+                        throw new Error('请求过于频繁，请稍后重试');
+                    } else {
+                        throw new Error('无法加载文档内容');
+                    }
+                }
+
+                const data = await response.json();
+
+                if (data.status === 'success' && data.data) {
+                    const doc = data.data;
+
+                    const titleEl = modalEl.querySelector('.modal-title');
+                    titleEl.textContent = doc.filename;
+
+                    contentEl.textContent = doc.content;
+
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                } else {
+                    throw new Error(data.message || '无法加载文档内容');
+                }
+            } catch (error) {
+                console.error('加载文档失败:', error);
+
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = error.message || '请求超时，请重试';
+            }
+        }
+
+        // 测试函数
+        function testRenderEvidencePanel() {
+            const sources = [
+                {
+                    id: 'doc_123',
+                    filename: '访问关系开通流程.txt',
+                    relevance_score: 0.85,
+                    preview: '访问关系开通需要提交工单，填写源IP、目标IP、端口、协议等信息。审批流程包括系统负责人审批、网络管理员审批...'
+                },
+                {
+                    id: 'doc_456',
+                    filename: '网络权限申请指南.txt',
+                    relevance_score: 0.72,
+                    preview: '网络权限申请流程包括：1. 确认访问需求 2. 填写申请表单 3. 提交审批 4. 等待开通...'
+                }
+            ];
+
+            const container = document.getElementById('test-panel-container');
+            container.innerHTML = '';
+            const panel = renderEvidenceSourcePanel(sources);
+            if (panel) {
+                container.appendChild(panel);
+            }
+        }
+
+        function testScoreColors() {
+            const sources = [
+                {
+                    id: 'doc_high',
+                    filename: '高相关度文档.txt',
+                    relevance_score: 0.95,
+                    preview: '这是一个高相关度的文档示例...'
+                },
+                {
+                    id: 'doc_medium',
+                    filename: '中等相关度文档.txt',
+                    relevance_score: 0.55,
+                    preview: '这是一个中等相关度的文档示例...'
+                },
+                {
+                    id: 'doc_low',
+                    filename: '低相关度文档.txt',
+                    relevance_score: 0.25,
+                    preview: '这是一个低相关度的文档示例...'
+                }
+            ];
+
+            const container = document.getElementById('test-colors-container');
+            container.innerHTML = '';
+            const panel = renderEvidenceSourcePanel(sources);
+            if (panel) {
+                container.appendChild(panel);
+            }
+        }
+
+        function testSorting() {
+            const sources = [
+                {
+                    id: 'doc_1',
+                    filename: '文档A (0.45)',
+                    relevance_score: 0.45,
+                    preview: '相关度评分 0.45'
+                },
+                {
+                    id: 'doc_2',
+                    filename: '文档B (0.92)',
+                    relevance_score: 0.92,
+                    preview: '相关度评分 0.92'
+                },
+                {
+                    id: 'doc_3',
+                    filename: '文档C (0.68)',
+                    relevance_score: 0.68,
+                    preview: '相关度评分 0.68'
+                },
+                {
+                    id: 'doc_4',
+                    filename: '文档D (0.33)',
+                    relevance_score: 0.33,
+                    preview: '相关度评分 0.33'
+                }
+            ];
+
+            const container = document.getElementById('test-sorting-container');
+            container.innerHTML = '';
+            const panel = renderEvidenceSourcePanel(sources);
+            if (panel) {
+                container.appendChild(panel);
+            }
+        }
+
+        function testDocumentPreview() {
+            // 使用模拟数据测试模态框
+            showDocumentPreview('test_doc_123');
+        }
+    </script>
+</body>
+</html>
