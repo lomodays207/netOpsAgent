@@ -117,6 +117,18 @@ def _json_response(route, confidence=0.91, reason="llm_reinforces_rule"):
             1,
         ),
         (
+            "访问关系是什么",
+            None,
+            lambda _: _json_response(
+                "general_chat",
+                confidence=0.92,
+                reason="definition_question",
+            ),
+            "general_chat",
+            "definition_question",
+            1,
+        ),
+        (
             "访问关系如何进行开通提单？需要哪些权限、审批节点和必填信息？",
             None,
             lambda _: _json_response(

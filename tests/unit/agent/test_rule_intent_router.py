@@ -105,3 +105,14 @@ def test_classify_access_relation_process_question_stays_soft_general_chat():
     assert result.certainty == "soft"
     assert result.reason == "general_network_question"
     assert result.signals["is_access_relation_query"] is False
+
+
+def test_classify_access_relation_definition_question_stays_soft_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("访问关系是什么")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "soft"
+    assert result.reason == "general_network_question"
+    assert result.signals["is_access_relation_query"] is False
