@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import Optional
 
 from .intent_types import IntentDecision, LLMIntentResult, RuleIntentResult
@@ -29,9 +30,14 @@ def _parse_float_env(name: str, default: float) -> float:
         return default
 
     try:
-        return float(raw_value)
-    except ValueError:
+        value = float(raw_value)
+    except (TypeError, ValueError):
         return default
+
+    if not math.isfinite(value) or value < 0.0 or value > 1.0:
+        return default
+
+    return value
 
 
 def _create_default_llm_client():
