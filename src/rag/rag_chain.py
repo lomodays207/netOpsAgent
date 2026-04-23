@@ -48,7 +48,12 @@ class RAGChain:
             filter_dict: 过滤条件
             
         Returns:
-            相关文档列表
+            相关文档列表，每个文档包含:
+            - id: 文档ID（ChromaDB的ID）
+            - text: 文档内容
+            - metadata: 元数据
+            - relevance_score: 相关度评分（0-1范围）
+            - preview: 预览文本（前200字符）
         """
         k = top_k or self.top_k
         results = self.vector_store.search(query, top_k=k, filter_dict=filter_dict)
@@ -59,7 +64,13 @@ class RAGChain:
         for result in results:
             relevance = 1 - result.get("distance", 1.0)
             if relevance >= self.min_relevance_score:
+                # 确保文档ID存在（使用ChromaDB的ID）
                 result["relevance_score"] = relevance
+                
+                # 添加预览文本（前200字符）
+                text = result.get("text", "")
+                result["preview"] = text[:200] if len(text) > 200 else text
+                
                 filtered_results.append(result)
         
         return filtered_results
@@ -113,6 +124,12 @@ class RAGChain:
             
         Returns:
             (增强后的用户prompt, 系统prompt, 检索到的文档列表)
+            文档列表中每个文档包含:
+            - id: 文档ID（ChromaDB的ID）
+            - text: 文档内容
+            - metadata: 元数据（包含filename等）
+            - relevance_score: 相关度评分（0-1范围）
+            - preview: 预览文本（前200字符）
         """
         # 获取上下文
         context, docs = self.build_context(query, top_k=top_k)

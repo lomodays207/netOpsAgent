@@ -255,6 +255,90 @@ class TestRAGChain:
         assert len(results) > 0, "应该返回检索结果"
         assert len(results) <= 2, "结果数量不应超过top_k"
         assert 'relevance_score' in results[0], "结果应该包含相关性分数"
+        
+        # 验证新增字段
+        first_result = results[0]
+        assert 'id' in first_result, "结果应该包含文档ID"
+        assert 'preview' in first_result, "结果应该包含预览文本"
+        assert isinstance(first_result['id'], str), "文档ID应该是字符串"
+        assert isinstance(first_result['preview'], str), "预览文本应该是字符串"
+        assert len(first_result['preview']) <= 200, "预览文本不应超过200字符"
+        
+        # 验证相关度评分范围
+        assert 0 <= first_result['relevance_score'] <= 1, "相关度评分应该在0-1范围内"
+    
+    def test_retrieve_preview_truncation(self, temp_dir):
+        """测试预览文本截取（200字符限制）"""
+        store = VectorStore(persist_directory=temp_dir)
+        
+        # 添加一个超过200字符的长文档
+        long_text = "这是一个很长的文档内容。" * 50  # 生成一个超过200字符的文本
+        texts = [long_text]
+        metadatas = [{"doc_id": "doc_long", "filename": "long_doc.txt", "chunk_index": 0}]
+        store.add_documents(texts=texts, metadatas=metadatas, doc_id="doc_long")
+        
+        chain = RAGChain(vector_store=store, top_k=1, min_relevance_score=0.0)
+        results = chain.retrieve("文档内容")
+        
+        assert len(results) > 0, "应该返回检索结果"
+        assert 'preview' in results[0], "结果应该包含预览文本"
+        assert len(results[0]['preview']) == 200, "预览文本应该正好是200字符"
+        assert results[0]['preview'] == long_text[:200], "预览文本应该是原文本的前200字符"
+    
+    def test_retrieve_short_text_preview(self, temp_dir):
+        """测试短文本预览（不足200字符）"""
+        store = VectorStore(persist_directory=temp_dir)
+        
+        # 添加一个短文档
+        short_text = "这是一个短文档。"
+        texts = [short_text]
+        metadatas = [{"doc_id": "doc_short", "filename": "short_doc.txt", "chunk_index": 0}]
+        store.add_documents(texts=texts, metadatas=metadatas, doc_id="doc_short")
+        
+        chain = RAGChain(vector_store=store, top_k=1, min_relevance_score=0.0)
+        results = chain.retrieve("短文档")
+        
+        assert len(results) > 0, "应该返回检索结果"
+        assert 'preview' in results[0], "结果应该包含预览文本"
+        assert results[0]['preview'] == short_text, "短文本的预览应该是完整文本"
+        assert len(results[0]['preview']) < 200, "短文本预览应该少于200字符"
+    
+    def test_retrieve_filters_low_relevance(self, temp_dir):
+        """测试过滤低相关度文档（< 0.05）"""
+        store = VectorStore(persist_directory=temp_dir)
+        
+        # 添加测试数据
+        texts = [
+            "网络故障排查指南",
+            "完全不相关的内容关于烹饪和美食"
+        ]
+        metadatas = [
+            {"doc_id": "doc_test", "filename": "test.txt", "chunk_index": i}
+            for i in range(len(texts))
+        ]
+        store.add_documents(texts=texts, metadatas=metadatas, doc_id="doc_test")
+        
+        chain = RAGChain(vector_store=store, top_k=10, min_relevance_score=0.05)
+        results = chain.retrieve("网络故障排查")
+        
+        # 验证所有返回的文档相关度都 >= 0.05
+        for result in results:
+            assert result['relevance_score'] >= 0.05, f"相关度评分 {result['relevance_score']} 应该 >= 0.05"
+    
+    def test_retrieve_document_id_consistency(self, rag_chain):
+        """测试文档ID一致性（同一文档多次检索返回相同ID）"""
+        # 第一次检索
+        results1 = rag_chain.retrieve("端口问题")
+        assert len(results1) > 0, "应该返回检索结果"
+        first_id = results1[0]['id']
+        
+        # 第二次检索相同问题
+        results2 = rag_chain.retrieve("端口问题")
+        assert len(results2) > 0, "应该返回检索结果"
+        second_id = results2[0]['id']
+        
+        # 验证ID一致性
+        assert first_id == second_id, "同一文档在多次检索中应返回相同的ID"
     
     def test_build_context(self, rag_chain):
         """测试构建上下文"""
@@ -273,6 +357,16 @@ class TestRAGChain:
         assert len(system_prompt) > 0, "系统提示词不应为空"
         assert "参考资料" in system_prompt or "知识库" in system_prompt, "应该包含参考资料提示"
         assert len(docs) > 0, "应该有检索到的文档"
+        
+        # 验证返回的文档包含所有必需字段
+        for doc in docs:
+            assert 'id' in doc, "文档应该包含ID字段"
+            assert 'text' in doc, "文档应该包含text字段"
+            assert 'metadata' in doc, "文档应该包含metadata字段"
+            assert 'relevance_score' in doc, "文档应该包含relevance_score字段"
+            assert 'preview' in doc, "文档应该包含preview字段"
+            assert 0 <= doc['relevance_score'] <= 1, "相关度评分应该在0-1范围内"
+            assert len(doc['preview']) <= 200, "预览文本不应超过200字符"
     
     def test_has_knowledge(self, rag_chain):
         """测试知识库是否有内容"""
