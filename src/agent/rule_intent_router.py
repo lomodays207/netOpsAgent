@@ -18,7 +18,7 @@ QUESTION_STYLE_RE = re.compile(
     re.IGNORECASE,
 )
 FAILURE_RE = re.compile(
-    r"(不通|失败|超时|拒绝|访问不了|访问失败|无法访问|连不通|连接失败|timeout|refused|"
+    r"(不通|失败|超时|拒绝|访问不了|访问失败|无法访问|连不上|连不通|连接失败|timeout|refused|"
     r"connection reset|no route|故障|异常)",
     re.IGNORECASE,
 )
@@ -61,7 +61,6 @@ class RuleIntentRouter:
     def classify(self, message: str, session: Optional[Any] = None) -> RuleIntentResult:
         text = (message or "").strip()
         session_status = getattr(session, "status", None)
-        signals = self._collect_signals(text, session)
 
         if session_status == "waiting_user":
             return RuleIntentResult(
@@ -69,8 +68,9 @@ class RuleIntentRouter:
                 confidence=0.99,
                 reason="session_waiting_user",
                 certainty="hard",
-                signals=signals,
             )
+
+        signals = self._collect_signals(text, session)
 
         if signals["is_diagnostic_session"]:
             if signals["has_pair"] and (

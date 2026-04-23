@@ -19,6 +19,16 @@ def test_classify_structured_diagnosis_as_hard():
     assert result.signals["has_failure"] is True
 
 
+def test_classify_legacy_failure_phrase_as_hard_diagnosis():
+    router = RuleIntentRouter()
+
+    result = router.classify("web-01到db-01连不上")
+
+    assert result.route == "start_diagnosis"
+    assert result.certainty == "hard"
+    assert result.signals["has_failure"] is True
+
+
 def test_classify_ambiguous_issue_as_soft_clarify():
     router = RuleIntentRouter()
 
