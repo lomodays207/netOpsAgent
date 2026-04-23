@@ -149,3 +149,45 @@ def test_build_prompt_truncates_current_and_recent_message_content():
     prompt = json.loads(llm_client.calls[0]["prompt"])
     assert prompt["message"] == "m" * 1000
     assert prompt["recent_messages"][0]["content"] == "r" * 500
+
+
+def test_build_prompt_truncates_rule_result_signal_string_values():
+    llm_client = FakeLLMClient(
+        """{
+            "route": "general_chat",
+            "confidence": 0.88,
+            "reason": "bounded_signals"
+        }"""
+    )
+    classifier = LLMIntentClassifier(llm_client=llm_client)
+    rule_result = RuleIntentResult(
+        route="general_chat",
+        confidence=0.78,
+        reason="general_network_question",
+        certainty="soft",
+        signals={
+            "source": "s" * 1001,
+            "target": "t" * 1001,
+            "nested": {"raw": "x" * 1001},
+            "items": ["y" * 1001, 42, True],
+            "tuple_items": ("z" * 1001,),
+            "has_question_style": True,
+            "score": 0.5,
+        },
+    )
+
+    classifier.classify(
+        message="端口不通怎么排查？",
+        session=None,
+        recent_messages=[],
+        rule_result=rule_result,
+    )
+
+    signals = json.loads(llm_client.calls[0]["prompt"])["rule_result"]["signals"]
+    assert signals["source"] == "s" * 500
+    assert signals["target"] == "t" * 500
+    assert signals["nested"]["raw"] == "x" * 500
+    assert signals["items"] == ["y" * 500, 42, True]
+    assert signals["tuple_items"] == ["z" * 500]
+    assert signals["has_question_style"] is True
+    assert signals["score"] == 0.5

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
@@ -20,6 +21,7 @@ ALLOWED_ROUTES = (
 MAX_MESSAGE_CHARS = 1000
 MAX_RECENT_MESSAGE_CHARS = 500
 MAX_RECENT_MESSAGES = 5
+MAX_SIGNAL_VALUE_CHARS = 500
 
 AllowedRoute = Literal[
     "start_diagnosis",
@@ -117,7 +119,7 @@ class LLMIntentClassifier:
                 "reason": rule_result.reason,
                 "certainty": rule_result.certainty,
                 "clarify_message": rule_result.clarify_message,
-                "signals": rule_result.signals,
+                "signals": self._sanitize_signal_value(rule_result.signals),
             },
             "allowed_routes": list(ALLOWED_ROUTES),
             "required_output_keys": [
@@ -154,6 +156,26 @@ class LLMIntentClassifier:
     def _truncate_text(self, value: Any, max_chars: int) -> str:
         text = "" if value is None else str(value)
         return text[:max_chars]
+
+    def _sanitize_signal_value(self, value: Any) -> Any:
+        if isinstance(value, (bool, int, float)) or value is None:
+            return value
+
+        if isinstance(value, str):
+            return self._truncate_text(value, MAX_SIGNAL_VALUE_CHARS)
+
+        if isinstance(value, Mapping):
+            return {
+                self._truncate_text(key, MAX_SIGNAL_VALUE_CHARS): self._sanitize_signal_value(
+                    item
+                )
+                for key, item in value.items()
+            }
+
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return [self._sanitize_signal_value(item) for item in value]
+
+        return self._truncate_text(value, MAX_SIGNAL_VALUE_CHARS)
 
     def _is_diagnostic_session(self, session: Optional[Any]) -> bool:
         if not session or not getattr(session, "task", None):
