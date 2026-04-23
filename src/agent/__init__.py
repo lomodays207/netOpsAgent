@@ -9,7 +9,7 @@ import importlib
 
 from .analyzer import DiagnosticAnalyzer
 from .executor import Executor
-from .intent_router import IntentRouter, RuleIntentRouter
+from .intent_router import IntentRouter, RuleIntentRouter, build_intent_router
 from .nlu import NLU
 from .planner import TaskPlanner
 from .reporter import ReportGenerator
@@ -21,6 +21,7 @@ __all__ = [
     "ReportGenerator",
     "IntentRouter",
     "RuleIntentRouter",
+    "build_intent_router",
     "HybridIntentRouter",
     "NLU",
 ]

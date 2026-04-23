@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 
-from .agent import IntentRouter, NLU
+from .agent import build_intent_router, NLU
 from .agent.general_chat_agent import (
     GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE,
     GeneralChatToolAgent,
@@ -45,7 +45,7 @@ if os.path.exists("static"):
 
 # 初始化会话管理器
 session_manager = get_session_manager()
-intent_router = IntentRouter()
+intent_router = build_intent_router()
 
 
 @app.on_event("startup")
