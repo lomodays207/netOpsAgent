@@ -1,6 +1,11 @@
 import pytest
 
-from src.utils.input_validator import extract_network_info, is_valid_ip, is_valid_port
+from src.utils.input_validator import (
+    extract_endpoint_pair,
+    extract_network_info,
+    is_valid_ip,
+    is_valid_port,
+)
 
 
 class DummyLLMClient:
@@ -61,6 +66,20 @@ class TestIPValidation:
         source, target, port, error = extract_network_info("应用服务器访问数据库失败")
         assert source == "应用服务器"
         assert target == "数据库"
+        assert port is None
+        assert error == ""
+
+    def test_extract_endpoint_pair_stops_before_connected_unreachable_phrase(self):
+        source, target = extract_endpoint_pair("web-01到db-01连不通")
+
+        assert source == "web-01"
+        assert target == "db-01"
+
+    def test_extract_network_info_stops_before_connected_unreachable_phrase(self):
+        source, target, port, error = extract_network_info("web-01到db-01连不通")
+
+        assert source == "web-01"
+        assert target == "db-01"
         assert port is None
         assert error == ""
 

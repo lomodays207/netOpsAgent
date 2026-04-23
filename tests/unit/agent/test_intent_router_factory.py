@@ -1,14 +1,11 @@
-import os
 import subprocess
 import sys
-from types import SimpleNamespace
 
 import pytest
 
 
-def make_session(status="completed", source="general_chat", target="general_chat"):
-    task = SimpleNamespace(source=source, target=target)
-    return SimpleNamespace(status=status, task=task)
+class FakeLLMClient:
+    pass
 
 
 def test_build_intent_router_defaults_to_rule_router(monkeypatch):
@@ -45,9 +42,71 @@ def test_build_intent_router_hybrid_mode_uses_injected_llm_client(monkeypatch):
 
     assert isinstance(router, HybridIntentRouter)
     assert router.llm_classifier.llm_client is fake_llm_client
-    assert router.min_llm_confidence == 0.91
-    assert router.min_llm_diagnosis_confidence == 0.93
+    assert router.min_confidence == 0.91
+    assert router.diagnosis_min_confidence == 0.93
     assert router.log_decisions is True
+
+
+@pytest.mark.parametrize(
+    "env_name,env_value,expected_attr,expected_default",
+    [
+        ("INTENT_LLM_MIN_CONFIDENCE", "", "min_confidence", 0.80),
+        ("INTENT_LLM_MIN_CONFIDENCE", "not-a-number", "min_confidence", 0.80),
+        ("INTENT_LLM_MIN_CONFIDENCE", "NaN", "min_confidence", 0.80),
+        ("INTENT_LLM_MIN_CONFIDENCE", "Infinity", "min_confidence", 0.80),
+        ("INTENT_LLM_MIN_CONFIDENCE", "-1", "min_confidence", 0.80),
+        ("INTENT_LLM_MIN_CONFIDENCE", "1.1", "min_confidence", 0.80),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "", "diagnosis_min_confidence", 0.85),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "not-a-number", "diagnosis_min_confidence", 0.85),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "NaN", "diagnosis_min_confidence", 0.85),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "Infinity", "diagnosis_min_confidence", 0.85),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "-1", "diagnosis_min_confidence", 0.85),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "1.1", "diagnosis_min_confidence", 0.85),
+    ],
+)
+def test_build_intent_router_invalid_threshold_values_fall_back_to_defaults(
+    monkeypatch,
+    env_name,
+    env_value,
+    expected_attr,
+    expected_default,
+):
+    monkeypatch.setenv("INTENT_ROUTER_MODE", "hybrid")
+    monkeypatch.setenv(env_name, env_value)
+
+    from src.agent.intent_router import build_intent_router
+
+    router = build_intent_router(llm_client=FakeLLMClient())
+
+    assert getattr(router, expected_attr) == expected_default
+
+
+@pytest.mark.parametrize(
+    "env_name,env_value,expected_attr,expected_value",
+    [
+        ("INTENT_LLM_MIN_CONFIDENCE", "0", "min_confidence", 0.0),
+        ("INTENT_LLM_MIN_CONFIDENCE", "1", "min_confidence", 1.0),
+        ("INTENT_LLM_MIN_CONFIDENCE", "0.91", "min_confidence", 0.91),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "0", "diagnosis_min_confidence", 0.0),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "1", "diagnosis_min_confidence", 1.0),
+        ("INTENT_LLM_DIAGNOSIS_MIN_CONFIDENCE", "0.91", "diagnosis_min_confidence", 0.91),
+    ],
+)
+def test_build_intent_router_valid_threshold_values_are_accepted(
+    monkeypatch,
+    env_name,
+    env_value,
+    expected_attr,
+    expected_value,
+):
+    monkeypatch.setenv("INTENT_ROUTER_MODE", "hybrid")
+    monkeypatch.setenv(env_name, env_value)
+
+    from src.agent.intent_router import build_intent_router
+
+    router = build_intent_router(llm_client=FakeLLMClient())
+
+    assert getattr(router, expected_attr) == expected_value
 
 
 def test_build_intent_router_hybrid_falls_back_when_default_llm_client_creation_fails(monkeypatch):
@@ -84,4 +143,3 @@ def test_factory_imports_do_not_eagerly_load_hybrid_modules():
     lines = completed.stdout.strip().splitlines()
     assert lines[0] == "False False"
     assert lines[1] == "True"
-

@@ -13,21 +13,21 @@ PAIR_PATTERNS = (
     re.compile(
         r"(?P<source>[^\s,，。;；:：()（）]+?)到"
         r"(?P<target>[^\s,，。;；:：()（）]+?)"
-        r"(?=的|端口|port\b|服务|service\b|不通|连不上|连接失败|访问失败|访问不了|超时|"
+        r"(?=的|端口|port\b|服务|service\b|连不通|不通|连不上|连接失败|访问失败|访问不了|超时|"
         r"timeout|refused|失败|故障|异常|$)",
         re.IGNORECASE,
     ),
     re.compile(
         r"(?P<source>[^\s,，。;；:：()（）]+?)访问"
         r"(?P<target>[^\s,，。;；:：()（）]+?)"
-        r"(?=的|端口|port\b|服务|service\b|不通|连接失败|访问失败|访问不了|超时|"
+        r"(?=的|端口|port\b|服务|service\b|连不通|不通|连接失败|访问失败|访问不了|超时|"
         r"timeout|refused|失败|故障|异常|$)",
         re.IGNORECASE,
     ),
     re.compile(
         r"(?P<source>[^\s,，。;；:：()（）]+?)(?:连接|连)"
         r"(?P<target>[^\s,，。;；:：()（）]+?)"
-        r"(?=的|端口|port\b|服务|service\b|不上|不通|超时|timeout|refused|失败|故障|异常|$)",
+        r"(?=的|端口|port\b|服务|service\b|连不通|不上|不通|超时|timeout|refused|失败|故障|异常|$)",
         re.IGNORECASE,
     ),
     re.compile(
