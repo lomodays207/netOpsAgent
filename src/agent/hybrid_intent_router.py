@@ -12,6 +12,7 @@ from .rule_intent_router import RuleIntentRouter
 
 
 logger = logging.getLogger(__name__)
+MESSAGE_PREVIEW_LIMIT = 120
 
 
 class HybridIntentRouter:
@@ -93,9 +94,16 @@ class HybridIntentRouter:
         if llm_confidence < threshold:
             return rule_result.to_decision(), "llm_below_threshold"
 
+        if llm_route == "continue_diagnosis":
+            if not rule_result.signals.get("is_diagnostic_session"):
+                return rule_result.to_decision(), "non_diagnostic_session"
+            return self._decision_from_llm(llm_result), None
+
         if llm_route == "start_diagnosis":
             if not rule_result.signals.get("has_pair"):
                 return self._clarify_decision(rule_result), "missing_pair"
+            if not self._has_start_diagnosis_signal(rule_result):
+                return rule_result.to_decision(), "missing_start_signal"
             if rule_result.route == "clarify":
                 return rule_result.to_decision(), "rule_prefers_clarify"
             if rule_result.route == "general_chat":
@@ -110,6 +118,19 @@ class HybridIntentRouter:
             return rule_result.to_decision(), "rule_prefers_clarify"
 
         return self._decision_from_llm(llm_result), None
+
+    def _has_start_diagnosis_signal(self, rule_result: RuleIntentResult) -> bool:
+        signals = rule_result.signals
+        return any(
+            signals.get(name)
+            for name in (
+                "has_failure",
+                "has_tool_cmd",
+                "has_actionable",
+                "has_ip",
+                "has_port_or_service",
+            )
+        )
 
     def _decision_from_llm(self, llm_result: Any) -> IntentDecision:
         return IntentDecision(
@@ -165,7 +186,8 @@ class HybridIntentRouter:
             return
 
         log_payload = {
-            "message": message,
+            "message_preview": self._preview_message(message),
+            "message_length": len("" if message is None else str(message)),
             "rule": {
                 "route": rule_result.route,
                 "certainty": rule_result.certainty,
@@ -183,3 +205,6 @@ class HybridIntentRouter:
         }
         logger.info(json.dumps(log_payload, ensure_ascii=False))
 
+    def _preview_message(self, message: Any) -> str:
+        text = "" if message is None else str(message)
+        return text[:MESSAGE_PREVIEW_LIMIT]

@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import subprocess
+import sys
 
 import pytest
 
@@ -135,3 +137,99 @@ def test_conservative_merge_prefers_clarify_over_diagnosis_without_pair():
     assert decision.reason == "issue_report_without_enough_details"
     assert decision.clarify_message == "Please provide source, target, and port."
 
+
+def test_low_confidence_continue_without_diagnostic_session_falls_back_to_rule():
+    rule_result = make_rule_result(
+        route="general_chat",
+        confidence=0.78,
+        reason="general_network_question",
+        certainty="soft",
+        signals={"is_diagnostic_session": False, "has_question_style": True},
+    )
+    rule_router = FakeRuleRouter(rule_result)
+    llm_classifier = FakeLLMClassifier(
+        IntentDecision(
+            route="continue_diagnosis",
+            confidence=0.97,
+            reason="llm_pushes_continue",
+        )
+    )
+    router = HybridIntentRouter(rule_router=rule_router, llm_classifier=llm_classifier)
+
+    decision = router.route_message("what about the firewall?")
+
+    assert decision.route == "general_chat"
+    assert decision.reason == "general_network_question"
+
+
+def test_continue_rule_without_start_signals_is_not_upgraded_to_start():
+    rule_result = make_rule_result(
+        route="continue_diagnosis",
+        confidence=0.75,
+        reason="follow_up_in_diagnostic_session",
+        certainty="soft",
+        signals={
+            "is_diagnostic_session": True,
+            "has_pair": True,
+            "has_failure": False,
+            "has_tool_cmd": False,
+            "has_actionable": False,
+            "has_ip": False,
+            "has_port_or_service": False,
+        },
+    )
+    rule_router = FakeRuleRouter(rule_result)
+    llm_classifier = FakeLLMClassifier(
+        IntentDecision(
+            route="start_diagnosis",
+            confidence=0.98,
+            reason="llm_pushes_start",
+        )
+    )
+    router = HybridIntentRouter(rule_router=rule_router, llm_classifier=llm_classifier)
+
+    decision = router.route_message("please investigate")
+
+    assert decision.route == "continue_diagnosis"
+    assert decision.reason == "follow_up_in_diagnostic_session"
+
+
+def test_log_decision_uses_bounded_preview_and_length(caplog):
+    message = "user-visible summary " + ("x" * 220) + " SENSITIVE_TAIL_12345"
+    rule_result = make_rule_result(
+        route="general_chat",
+        confidence=0.95,
+        reason="default_general_chat",
+        certainty="hard",
+        signals={"has_question_style": False},
+    )
+    router = HybridIntentRouter(rule_router=FakeRuleRouter(rule_result), log_decisions=True)
+
+    with caplog.at_level("INFO", logger="src.agent.hybrid_intent_router"):
+        router.route_message(message)
+
+    log_text = "\n".join(caplog.messages)
+    assert "SENSITIVE_TAIL_12345" not in log_text
+    assert "message_preview" in log_text
+    assert "message_length" in log_text
+    assert "message" not in log_text or '"message"' not in log_text
+
+
+def test_agent_package_lazy_exports_hybrid_router_without_eager_imports():
+    script = (
+        "import sys; "
+        "import src.agent; "
+        "print('src.agent.hybrid_intent_router' in sys.modules, 'src.agent.llm_intent_router' in sys.modules); "
+        "from src.agent import HybridIntentRouter; "
+        "print(callable(HybridIntentRouter))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    lines = completed.stdout.strip().splitlines()
+    assert lines[0] == "False False"
+    assert lines[1] == "True"
