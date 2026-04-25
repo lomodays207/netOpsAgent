@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipboardHandler 测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .test-section h2 {
+            color: #555;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .result.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .log-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            color: #f0f0f0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+        .log-entry.success {
+            color: #4caf50;
+        }
+        .log-entry.error {
+            color: #f44336;
+        }
+        .log-entry.warn {
+            color: #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>📋 ClipboardHandler 功能测试</h1>
+        
+        <div class="test-section">
+            <h2>测试 1: 基本复制功能</h2>
+            <textarea id="test1-input" placeholder="输入要复制的文本...">Hello, ClipboardHandler!</textarea>
+            <button id="test1-btn">复制文本</button>
+            <div id="test1-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>测试 2: 复制空字符串</h2>
+            <button id="test2-btn">复制空字符串</button>
+            <div id="test2-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>测试 3: 复制长文本</h2>
+            <button id="test3-btn">复制长文本 (1000字符)</button>
+            <div id="test3-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>测试 4: 复制特殊字符</h2>
+            <textarea id="test4-input" readonly>特殊字符测试: <script>alert('XSS')</script> & "quotes" 'single' 中文 emoji 😀🎉</textarea>
+            <button id="test4-btn">复制特殊字符</button>
+            <div id="test4-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>测试 5: 复制 HTML 标签</h2>
+            <textarea id="test5-input" readonly><div><p>HTML content</p><img src="x" onerror="alert('XSS')"></div></textarea>
+            <button id="test5-btn">复制 HTML</button>
+            <div id="test5-result"></div>
+        </div>
+
+        <div class="log-container" id="log-container">
+            <div class="log-entry">控制台日志将显示在这里...</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // 创建 ClipboardHandler 实例
+        const clipboardHandler = new ClipboardHandler();
+        const logContainer = document.getElementById('log-container');
+
+        // 拦截 console.log 以显示在页面上
+        const originalLog = console.log;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+
+        function addLogEntry(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addLogEntry(args.join(' '), 'info');
+        };
+
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addLogEntry(args.join(' '), 'warn');
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addLogEntry(args.join(' '), 'error');
+        };
+
+        // 显示结果的辅助函数
+        function showResult(elementId, success, message) {
+            const resultEl = document.getElementById(elementId);
+            resultEl.className = `result ${success ? 'success' : 'error'}`;
+            resultEl.textContent = message;
+        }
+
+        // 测试 1: 基本复制功能
+        document.getElementById('test1-btn').addEventListener('click', async () => {
+            const text = document.getElementById('test1-input').value;
+            const success = await clipboardHandler.copyToClipboard(text);
+            showResult('test1-result', success, 
+                success ? '✓ 复制成功！请尝试粘贴 (Ctrl+V) 验证' : '✗ 复制失败');
+        });
+
+        // 测试 2: 复制空字符串
+        document.getElementById('test2-btn').addEventListener('click', async () => {
+            const success = await clipboardHandler.copyToClipboard('');
+            showResult('test2-result', !success, 
+                !success ? '✓ 正确拒绝空字符串' : '✗ 不应该允许复制空字符串');
+        });
+
+        // 测试 3: 复制长文本
+        document.getElementById('test3-btn').addEventListener('click', async () => {
+            const longText = 'A'.repeat(1000);
+            const success = await clipboardHandler.copyToClipboard(longText);
+            showResult('test3-result', success, 
+                success ? `✓ 成功复制 ${longText.length} 字符` : '✗ 复制长文本失败');
+        });
+
+        // 测试 4: 复制特殊字符
+        document.getElementById('test4-btn').addEventListener('click', async () => {
+            const text = document.getElementById('test4-input').value;
+            const success = await clipboardHandler.copyToClipboard(text);
+            showResult('test4-result', success, 
+                success ? '✓ 特殊字符复制成功' : '✗ 特殊字符复制失败');
+        });
+
+        // 测试 5: 复制 HTML 标签
+        document.getElementById('test5-btn').addEventListener('click', async () => {
+            const text = document.getElementById('test5-input').value;
+            const success = await clipboardHandler.copyToClipboard(text);
+            showResult('test5-result', success, 
+                success ? '✓ HTML 标签作为纯文本复制成功' : '✗ HTML 复制失败');
+        });
+
+        // 初始化日志
+        console.log('ClipboardHandler 测试页面已加载');
+        console.log('浏览器信息:', navigator.userAgent);
+        console.log('Clipboard API 支持:', navigator.clipboard ? '是' : '否');
+    </script>
+</body>
+</html>

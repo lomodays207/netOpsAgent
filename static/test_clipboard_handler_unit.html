@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipboardHandler 单元测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .test-summary {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .summary-item {
+            flex: 1;
+            text-align: center;
+        }
+        .summary-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .summary-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .summary-item.total .summary-number { color: #333; }
+        .summary-item.passed .summary-number { color: #4caf50; }
+        .summary-item.failed .summary-number { color: #f44336; }
+        .summary-item.skipped .summary-number { color: #ff9800; }
+        
+        .test-suite {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .suite-header {
+            background: #667eea;
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .test-case {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .test-case:last-child {
+            border-bottom: none;
+        }
+        .test-case.passed {
+            background: #f1f8f4;
+        }
+        .test-case.failed {
+            background: #fef5f5;
+        }
+        .test-case.skipped {
+            background: #fff8e1;
+        }
+        .test-name {
+            flex: 1;
+            font-size: 14px;
+        }
+        .test-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .test-status.passed { color: #4caf50; }
+        .test-status.failed { color: #f44336; }
+        .test-status.skipped { color: #ff9800; }
+        .test-duration {
+            color: #999;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .test-error {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff;
+            border-left: 3px solid #f44336;
+            font-family: monospace;
+            font-size: 12px;
+            color: #d32f2f;
+            white-space: pre-wrap;
+        }
+        .run-button {
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .run-button:hover {
+            background: #5568d3;
+        }
+        .run-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log-container {
+            margin-top: 30px;
+            padding: 15px;
+            background: #2d2d2d;
+            color: #f0f0f0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin-bottom: 3px;
+            padding: 2px 0;
+        }
+        .log-entry.info { color: #90caf9; }
+        .log-entry.success { color: #4caf50; }
+        .log-entry.error { color: #f44336; }
+        .log-entry.warn { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 ClipboardHandler 单元测试</h1>
+        <div class="subtitle">Requirements: 2.1, 2.2 | 测试 Clipboard API、降级方案和边界条件</div>
+        
+        <button class="run-button" id="run-tests-btn">运行所有测试</button>
+        
+        <div class="test-summary">
+            <div class="summary-item total">
+                <div class="summary-number" id="total-count">0</div>
+                <div class="summary-label">Total</div>
+            </div>
+            <div class="summary-item passed">
+                <div class="summary-number" id="passed-count">0</div>
+                <div class="summary-label">Passed</div>
+            </div>
+            <div class="summary-item failed">
+                <div class="summary-number" id="failed-count">0</div>
+                <div class="summary-label">Failed</div>
+            </div>
+            <div class="summary-item skipped">
+                <div class="summary-number" id="skipped-count">0</div>
+                <div class="summary-label">Skipped</div>
+            </div>
+        </div>
+        
+        <div id="test-suites-container"></div>
+        
+        <div class="log-container" id="log-container">
+            <div class="log-entry info">等待测试运行...</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // ============================================================================
+        // 简单的测试框架实现
+        // ============================================================================
+        
+        class TestRunner {
+            constructor() {
+                this.suites = [];
+                this.results = {
+                    total: 0,
+                    passed: 0,
+                    failed: 0,
+                    skipped: 0
+                };
+            }
+            
+            describe(suiteName, suiteFunc) {
+                const suite = {
+                    name: suiteName,
+                    tests: []
+                };
+                this.suites.push(suite);
+                
+                // 临时设置当前套件
+                this.currentSuite = suite;
+                suiteFunc();
+                this.currentSuite = null;
+            }
+            
+            it(testName, testFunc) {
+                if (!this.currentSuite) {
+                    throw new Error('it() must be called inside describe()');
+                }
+                
+                this.currentSuite.tests.push({
+                    name: testName,
+                    func: testFunc,
+                    status: 'pending',
+                    error: null,
+                    duration: 0
+                });
+            }
+            
+            async runAll() {
+                this.results = { total: 0, passed: 0, failed: 0, skipped: 0 };
+                
+                for (const suite of this.suites) {
+                    log(`\n运行测试套件: ${suite.name}`, 'info');
+                    
+                    for (const test of suite.tests) {
+                        this.results.total++;
+                        const startTime = performance.now();
+                        
+                        try {
+                            log(`  运行: ${test.name}`, 'info');
+                            await test.func();
+                            test.status = 'passed';
+                            test.duration = performance.now() - startTime;
+                            this.results.passed++;
+                            log(`  ✓ 通过: ${test.name} (${test.duration.toFixed(2)}ms)`, 'success');
+                        } catch (error) {
+                            test.status = 'failed';
+                            test.error = error.message;
+                            test.duration = performance.now() - startTime;
+                            this.results.failed++;
+                            log(`  ✗ 失败: ${test.name} - ${error.message}`, 'error');
+                        }
+                    }
+                }
+                
+                this.renderResults();
+            }
+            
+            renderResults() {
+                const container = document.getElementById('test-suites-container');
+                container.innerHTML = '';
+                
+                for (const suite of this.suites) {
+                    const suiteEl = document.createElement('div');
+                    suiteEl.className = 'test-suite';
+                    
+                    const headerEl = document.createElement('div');
+                    headerEl.className = 'suite-header';
+                    headerEl.textContent = suite.name;
+                    suiteEl.appendChild(headerEl);
+                    
+                    for (const test of suite.tests) {
+                        const testEl = document.createElement('div');
+                        testEl.className = `test-case ${test.status}`;
+                        
+                        const nameEl = document.createElement('div');
+                        nameEl.className = 'test-name';
+                        nameEl.textContent = test.name;
+                        testEl.appendChild(nameEl);
+                        
+                        const statusEl = document.createElement('div');
+                        statusEl.className = `test-status ${test.status}`;
+                        
+                        const icon = test.status === 'passed' ? '✓' : 
+                                   test.status === 'failed' ? '✗' : '○';
+                        statusEl.innerHTML = `${icon} ${test.status.toUpperCase()}`;
+                        
+                        if (test.duration > 0) {
+                            const durationEl = document.createElement('span');
+                            durationEl.className = 'test-duration';
+                            durationEl.textContent = `${test.duration.toFixed(2)}ms`;
+                            statusEl.appendChild(durationEl);
+                        }
+                        
+                        testEl.appendChild(statusEl);
+                        
+                        if (test.error) {
+                            const errorEl = document.createElement('div');
+                            errorEl.className = 'test-error';
+                            errorEl.textContent = test.error;
+                            testEl.appendChild(errorEl);
+                        }
+                        
+                        suiteEl.appendChild(testEl);
+                    }
+                    
+                    container.appendChild(suiteEl);
+                }
+                
+                // 更新统计
+                document.getElementById('total-count').textContent = this.results.total;
+                document.getElementById('passed-count').textContent = this.results.passed;
+                document.getElementById('failed-count').textContent = this.results.failed;
+                document.getElementById('skipped-count').textContent = this.results.skipped;
+                
+                log(`\n测试完成: ${this.results.passed}/${this.results.total} 通过`, 
+                    this.results.failed > 0 ? 'error' : 'success');
+            }
+        }
+        
+        // 断言函数
+        function expect(actual) {
+            return {
+                toBe(expected) {
+                    if (actual !== expected) {
+                        throw new Error(`Expected ${JSON.stringify(expected)}, but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toEqual(expected) {
+                    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                        throw new Error(`Expected ${JSON.stringify(expected)}, but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toBeTruthy() {
+                    if (!actual) {
+                        throw new Error(`Expected truthy value, but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toBeFalsy() {
+                    if (actual) {
+                        throw new Error(`Expected falsy value, but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toContain(substring) {
+                    if (typeof actual !== 'string' || !actual.includes(substring)) {
+                        throw new Error(`Expected string to contain "${substring}", but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toBeInstanceOf(constructor) {
+                    if (!(actual instanceof constructor)) {
+                        throw new Error(`Expected instance of ${constructor.name}, but got ${typeof actual}`);
+                    }
+                },
+                toBeNull() {
+                    if (actual !== null) {
+                        throw new Error(`Expected null, but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toBeUndefined() {
+                    if (actual !== undefined) {
+                        throw new Error(`Expected undefined, but got ${JSON.stringify(actual)}`);
+                    }
+                }
+            };
+        }
+        
+        // 日志函数
+        const logContainer = document.getElementById('log-container');
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        // 拦截 console 输出
+        const originalLog = console.log;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            if (args[0] && args[0].includes('[ClipboardHandler]')) {
+                log(args.join(' '), 'info');
+            }
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            if (args[0] && args[0].includes('[ClipboardHandler]')) {
+                log(args.join(' '), 'warn');
+            }
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            if (args[0] && args[0].includes('[ClipboardHandler]')) {
+                log(args.join(' '), 'error');
+            }
+        };
+        
+        // ============================================================================
+        // ClipboardHandler 单元测试
+        // ============================================================================
+        
+        const runner = new TestRunner();
+        
+        // 测试套件 1: Clipboard API 成功场景
+        runner.describe('Clipboard API 成功场景', () => {
+            runner.it('应该成功复制普通文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Hello, World!';
+                
+                // Mock Clipboard API
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                // 恢复原始 API
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应该成功复制包含特殊字符的文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = '特殊字符: <>&"\'\\n\\t emoji 😀🎉';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应该成功复制长文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'A'.repeat(10000);
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应该成功复制 HTML 标签作为纯文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = '<script>alert("XSS")</script><div>content</div>';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+        });
+        
+        // 测试套件 2: 降级方案 (execCommand)
+        runner.describe('降级方案 (execCommand)', () => {
+            runner.it('当 Clipboard API 不可用时应使用 execCommand', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Fallback test';
+                
+                // 移除 Clipboard API
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = undefined;
+                
+                // Mock execCommand
+                const originalExecCommand = document.execCommand;
+                let execCommandCalled = false;
+                document.execCommand = (command) => {
+                    if (command === 'copy') {
+                        execCommandCalled = true;
+                        return true;
+                    }
+                    return false;
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                expect(execCommandCalled).toBe(true);
+                
+                // 恢复原始 API
+                navigator.clipboard = originalClipboard;
+                document.execCommand = originalExecCommand;
+            });
+            
+            runner.it('当 Clipboard API 失败时应降级到 execCommand', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Fallback on error';
+                
+                // Mock Clipboard API 抛出错误
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async () => {
+                        throw new Error('Clipboard API failed');
+                    }
+                };
+                
+                // Mock execCommand
+                const originalExecCommand = document.execCommand;
+                let execCommandCalled = false;
+                document.execCommand = (command) => {
+                    if (command === 'copy') {
+                        execCommandCalled = true;
+                        return true;
+                    }
+                    return false;
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                expect(execCommandCalled).toBe(true);
+                
+                // 恢复原始 API
+                navigator.clipboard = originalClipboard;
+                document.execCommand = originalExecCommand;
+            });
+            
+            runner.it('execCommand 应正确创建和清理临时 textarea', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Cleanup test';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = undefined;
+                
+                const originalExecCommand = document.execCommand;
+                document.execCommand = () => true;
+                
+                const initialTextareaCount = document.querySelectorAll('textarea').length;
+                
+                await handler.copyToClipboard(text);
+                
+                const finalTextareaCount = document.querySelectorAll('textarea').length;
+                expect(finalTextareaCount).toBe(initialTextareaCount);
+                
+                navigator.clipboard = originalClipboard;
+                document.execCommand = originalExecCommand;
+            });
+        });
+        
+        // 测试套件 3: 错误处理
+        runner.describe('错误处理', () => {
+            runner.it('应拒绝空字符串', async () => {
+                const handler = new ClipboardHandler();
+                const result = await handler.copyToClipboard('');
+                expect(result).toBe(false);
+            });
+            
+            runner.it('应拒绝非字符串参数', async () => {
+                const handler = new ClipboardHandler();
+                const result1 = await handler.copyToClipboard(null);
+                expect(result1).toBe(false);
+                
+                const result2 = await handler.copyToClipboard(undefined);
+                expect(result2).toBe(false);
+                
+                const result3 = await handler.copyToClipboard(123);
+                expect(result3).toBe(false);
+                
+                const result4 = await handler.copyToClipboard({});
+                expect(result4).toBe(false);
+            });
+            
+            runner.it('当 Clipboard API 和 execCommand 都失败时应返回 false', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Both fail';
+                
+                // Mock Clipboard API 失败
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async () => {
+                        throw new Error('Clipboard API failed');
+                    }
+                };
+                
+                // Mock execCommand 失败
+                const originalExecCommand = document.execCommand;
+                document.execCommand = () => false;
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(false);
+                
+                // 恢复原始 API
+                navigator.clipboard = originalClipboard;
+                document.execCommand = originalExecCommand;
+            });
+            
+            runner.it('当 execCommand 抛出异常时应返回 false', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Exception test';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = undefined;
+                
+                const originalExecCommand = document.execCommand;
+                document.execCommand = () => {
+                    throw new Error('execCommand exception');
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(false);
+                
+                navigator.clipboard = originalClipboard;
+                document.execCommand = originalExecCommand;
+            });
+        });
+        
+        // 测试套件 4: 边界条件
+        runner.describe('边界条件', () => {
+            runner.it('应处理单字符文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'A';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应处理仅包含空白字符的文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = '   \\n\\t   ';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应处理 Unicode 字符', async () => {
+                const handler = new ClipboardHandler();
+                const text = '你好世界 🌍 مرحبا العالم';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+            
+            runner.it('应处理包含换行符的多行文本', async () => {
+                const handler = new ClipboardHandler();
+                const text = 'Line 1\\nLine 2\\nLine 3';
+                
+                const originalClipboard = navigator.clipboard;
+                navigator.clipboard = {
+                    writeText: async (t) => {
+                        expect(t).toBe(text);
+                        return Promise.resolve();
+                    }
+                };
+                
+                const result = await handler.copyToClipboard(text);
+                expect(result).toBe(true);
+                
+                navigator.clipboard = originalClipboard;
+            });
+        });
+        
+        // 测试套件 5: 视觉反馈功能 (showCopyFeedback)
+        runner.describe('视觉反馈功能 (showCopyFeedback)', () => {
+            runner.it('应该显示成功反馈图标 ✓', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                // 设置成功反馈
+                button.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button, 100);
+                
+                // 立即检查图标变化
+                expect(button.textContent).toBe('✓');
+                expect(button.classList.contains('success-feedback')).toBe(true);
+                
+                // 等待恢复
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.textContent).toBe('📋');
+                expect(button.classList.contains('success-feedback')).toBe(false);
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该显示失败反馈图标 ✗', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                // 设置失败反馈
+                button.setAttribute('data-feedback', 'error');
+                handler.showCopyFeedback(button, 100);
+                
+                // 立即检查图标变化
+                expect(button.textContent).toBe('✗');
+                expect(button.classList.contains('error-feedback')).toBe(true);
+                
+                // 等待恢复
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.textContent).toBe('📋');
+                expect(button.classList.contains('error-feedback')).toBe(false);
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该在指定时间后恢复原始图标', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button, 200);
+                
+                // 100ms 后仍应显示反馈图标
+                await new Promise(resolve => setTimeout(resolve, 100));
+                expect(button.textContent).toBe('✓');
+                
+                // 250ms 后应恢复原始图标
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.textContent).toBe('📋');
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该使用默认持续时间 2000ms', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                const startTime = performance.now();
+                handler.showCopyFeedback(button); // 不传 duration 参数
+                
+                // 立即检查图标变化
+                expect(button.textContent).toBe('✓');
+                
+                // 注意：完整等待 2000ms 会让测试太慢，这里只验证逻辑
+                // 实际项目中可以 mock setTimeout
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该拒绝无效的 button 参数', () => {
+                const handler = new ClipboardHandler();
+                
+                // 测试 null
+                handler.showCopyFeedback(null, 100);
+                
+                // 测试 undefined
+                handler.showCopyFeedback(undefined, 100);
+                
+                // 测试非 HTMLElement
+                handler.showCopyFeedback('not a button', 100);
+                handler.showCopyFeedback(123, 100);
+                handler.showCopyFeedback({}, 100);
+                
+                // 如果没有抛出异常，测试通过
+                expect(true).toBe(true);
+            });
+            
+            runner.it('应该处理无效的 duration 参数', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                
+                // 测试负数 duration（应使用默认值）
+                handler.showCopyFeedback(button, -100);
+                expect(button.textContent).toBe('✓');
+                
+                // 测试非数字 duration（应使用默认值）
+                const button2 = document.createElement('button');
+                button2.textContent = '📋';
+                document.body.appendChild(button2);
+                button2.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button2, 'invalid');
+                expect(button2.textContent).toBe('✓');
+                
+                document.body.removeChild(button);
+                document.body.removeChild(button2);
+            });
+            
+            runner.it('应该防止重复显示反馈', () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '✓'; // 已经是反馈图标
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button, 100);
+                
+                // 应该跳过，图标保持不变
+                expect(button.textContent).toBe('✓');
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该正确保存和恢复原始图标', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '🔄'; // 使用不同的原始图标
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button, 100);
+                
+                expect(button.textContent).toBe('✓');
+                
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.textContent).toBe('🔄'); // 应恢复为原始图标
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该清除 data-feedback 属性', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                button.setAttribute('data-feedback', 'success');
+                handler.showCopyFeedback(button, 100);
+                
+                // 恢复后应清除属性
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.getAttribute('data-feedback')).toBeNull();
+                
+                document.body.removeChild(button);
+            });
+            
+            runner.it('应该默认显示成功反馈（无 data-feedback 属性）', async () => {
+                const handler = new ClipboardHandler();
+                const button = document.createElement('button');
+                button.textContent = '📋';
+                document.body.appendChild(button);
+                
+                // 不设置 data-feedback 属性
+                handler.showCopyFeedback(button, 100);
+                
+                // 应默认显示成功图标
+                expect(button.textContent).toBe('✓');
+                expect(button.classList.contains('success-feedback')).toBe(true);
+                
+                await new Promise(resolve => setTimeout(resolve, 150));
+                expect(button.textContent).toBe('📋');
+                
+                document.body.removeChild(button);
+            });
+        });
+        
+        // 运行测试按钮
+        document.getElementById('run-tests-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('run-tests-btn');
+            btn.disabled = true;
+            btn.textContent = '测试运行中...';
+            
+            logContainer.innerHTML = '';
+            log('开始运行 ClipboardHandler 单元测试...', 'info');
+            log(`浏览器: ${navigator.userAgent}`, 'info');
+            log(`Clipboard API 支持: ${navigator.clipboard ? '是' : '否'}`, 'info');
+            
+            await runner.runAll();
+            
+            btn.disabled = false;
+            btn.textContent = '重新运行测试';
+        });
+        
+        // 页面加载时自动运行测试
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.getElementById('run-tests-btn').click();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

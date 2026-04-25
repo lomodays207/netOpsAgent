@@ -987,3 +987,250 @@ body {
     color: #991b1b;
     text-align: center;
 }
+
+/* ===== 用户消息操作按钮样式 ===== */
+
+/* 操作按钮容器 - 默认隐藏，悬停时显示 */
+.message-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    justify-content: flex-end;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+/* 鼠标悬停在用户消息上时显示操作按钮 */
+.user-message:hover .message-actions {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 操作按钮基础样式 */
+.message-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+}
+
+.message-action-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.message-action-btn:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+.message-action-btn:active {
+    transform: translateY(0);
+}
+
+/* 复制按钮 */
+.message-copy-btn {
+    /* 继承 message-action-btn 的所有样式 */
+}
+
+/* 编辑按钮 */
+.message-edit-btn {
+    /* 继承 message-action-btn 的所有样式 */
+}
+
+/* 成功反馈样式 */
+.message-action-btn.success-feedback {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #10b981;
+    animation: successPulse 0.3s ease;
+}
+
+@keyframes successPulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ===== 编辑模式样式 ===== */
+
+/* 编辑文本框 */
+.edit-message-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 0.875rem 1.125rem;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    resize: vertical;
+    transition: border-color 0.3s ease;
+}
+
+.edit-message-textarea:focus {
+    outline: none;
+    border-color: white;
+    background: white;
+}
+
+/* 编辑按钮组容器 */
+.edit-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    justify-content: flex-end;
+}
+
+/* 编辑按钮基础样式 */
+.edit-cancel-btn,
+.edit-send-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 0.75rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 取消按钮 */
+.edit-cancel-btn {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.edit-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.4);
+    transform: translateY(-1px);
+}
+
+.edit-cancel-btn:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+.edit-cancel-btn:active {
+    transform: translateY(0);
+}
+
+/* 发送按钮 */
+.edit-send-btn {
+    background: white;
+    color: var(--user-msg-bg);
+    border: 1px solid white;
+}
+
+.edit-send-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.95);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.edit-send-btn:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+.edit-send-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.edit-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+    /* 确保按钮触摸目标至少 44x44px */
+    .message-action-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .edit-cancel-btn,
+    .edit-send-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0.5rem 0.875rem;
+    }
+
+    /* 编辑文本框在移动端调整 */
+    .edit-message-textarea {
+        font-size: 16px; /* 防止 iOS 自动缩放 */
+        min-height: 100px;
+    }
+
+    /* 按钮组在小屏幕上保持水平布局 */
+    .edit-buttons {
+        gap: 0.5rem;
+    }
+}
+
+/* ===== 可访问性增强 ===== */
+
+/* 键盘焦点指示器 */
+.message-action-btn:focus-visible,
+.edit-cancel-btn:focus-visible,
+.edit-send-btn:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+.edit-message-textarea:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+    .message-action-btn {
+        border-width: 2px;
+    }
+
+    .edit-cancel-btn,
+    .edit-send-btn {
+        border-width: 2px;
+    }
+}
+
+/* 减少动画模式 */
+@media (prefers-reduced-motion: reduce) {
+    .message-action-btn,
+    .edit-cancel-btn,
+    .edit-send-btn {
+        transition: none;
+    }
+
+    .message-action-btn.success-feedback {
+        animation: none;
+    }
+}

@@ -138,6 +138,27 @@ def test_conservative_merge_prefers_clarify_over_diagnosis_without_pair():
     assert decision.clarify_message == "Please provide source, target, and port."
 
 
+def test_explicit_single_host_port_check_bypasses_llm_diagnosis_upgrade():
+    llm_classifier = FakeLLMClassifier(
+        IntentDecision(
+            route="start_diagnosis",
+            confidence=0.99,
+            reason="llm_pushes_diagnosis",
+        )
+    )
+    router = HybridIntentRouter(
+        rule_router=None,
+        llm_classifier=llm_classifier,
+    )
+
+    decision = router.route_message("请帮我检查 2.7.8.6主机上的 8008 是否正常监听。")
+
+    assert decision.route == "general_chat"
+    assert decision.reason == "host_port_listening_check"
+    assert decision.clarify_message is None
+    assert llm_classifier.calls == []
+
+
 def test_low_confidence_continue_without_diagnostic_session_falls_back_to_rule():
     rule_result = make_rule_result(
         route="general_chat",

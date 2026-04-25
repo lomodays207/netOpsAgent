@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from ..utils.input_validator import extract_endpoint_pair
 from .intent_types import IntentDecision, RuleIntentResult
+from .query_intents import detect_host_port_status_query
 
 
 ACCESS_RELATION_RE = re.compile(
@@ -39,7 +40,7 @@ PORT_OR_SERVICE_RE = re.compile(
     r"(端口|port\b|http|https|mysql|redis|postgres|postgresql|ssh|dns)",
     re.IGNORECASE,
 )
-IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+IP_RE = re.compile(r"(?<![A-Za-z0-9.])(?:\d{1,3}\.){3}\d{1,3}(?![A-Za-z0-9.])")
 
 GENERIC_ENDPOINTS = {
     "我",
@@ -75,6 +76,15 @@ class RuleIntentRouter:
             )
 
         signals = self._collect_signals(text, session)
+
+        if signals["is_port_listening_check"]:
+            return RuleIntentResult(
+                route="general_chat",
+                confidence=0.96,
+                reason="host_port_listening_check",
+                certainty="hard",
+                signals=signals,
+            )
 
         if signals["is_diagnostic_session"]:
             if signals["has_pair"] and (
@@ -187,17 +197,21 @@ class RuleIntentRouter:
 
     def _collect_signals(self, text: str, session: Optional[Any]) -> dict[str, Any]:
         source, target = extract_endpoint_pair(text)
+        host_port_status_query = detect_host_port_status_query(text)
+        ip_addresses = IP_RE.findall(text)
         return {
             "source": source,
             "target": target,
             "has_pair": self._has_specific_pair(source, target),
-            "has_ip": bool(IP_RE.search(text)),
+            "has_ip": bool(ip_addresses),
             "has_failure": bool(FAILURE_RE.search(text)),
             "has_actionable": bool(ACTIONABLE_RE.search(text)),
             "has_live_issue": bool(LIVE_ISSUE_RE.search(text)),
             "has_question_style": bool(QUESTION_STYLE_RE.search(text)),
             "has_tool_cmd": bool(TOOL_CMD_RE.search(text)),
             "has_port_or_service": bool(PORT_OR_SERVICE_RE.search(text)),
+            "host_port_status_query": host_port_status_query,
+            "is_port_listening_check": host_port_status_query is not None,
             "is_access_relation_query": bool(
                 ACCESS_RELATION_RE.search(text)
                 and not ACCESS_RELATION_KNOWLEDGE_RE.search(text)

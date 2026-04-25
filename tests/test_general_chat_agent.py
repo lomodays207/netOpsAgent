@@ -74,6 +74,77 @@ class FakeLLMClient:
         return AIMessage(content="fallback")
 
 
+class FakePortCheckLLMClient:
+    def __init__(self):
+        self.tool_round = 0
+
+    def invoke_langchain_messages_with_tools(self, messages, tools, temperature=None, max_tokens=None):
+        self.tool_round += 1
+        if self.tool_round == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call_port_1",
+                        "name": "check_port_alive",
+                        "args": {
+                            "host": "2.7.8.6",
+                            "port": 8008,
+                            "timeout": 5,
+                        },
+                    }
+                ],
+            )
+        return AIMessage(content="2.7.8.6:8008 is not listening.")
+
+    def invoke_langchain_messages(self, messages, temperature=None, max_tokens=None):
+        return AIMessage(content="fallback")
+
+
+class FakeExplicitPortCheckSummaryLLMClient:
+    def __init__(self):
+        self.tool_round = 0
+        self.last_tool_messages = None
+
+    def invoke_langchain_messages_with_tools(self, messages, tools, temperature=None, max_tokens=None):
+        self.tool_round += 1
+        self.last_tool_messages = messages
+        if self.tool_round == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call_explicit_port_1",
+                        "name": "check_port_alive",
+                        "args": {
+                            "host": "10.0.2.20",
+                            "port": 8008,
+                            "timeout": 30,
+                        },
+                    }
+                ],
+            )
+        return AIMessage(content="10.0.2.20 的 8008 端口当前未监听。")
+
+    def invoke_langchain_messages(self, messages, temperature=None, max_tokens=None):
+        return AIMessage(content="fallback")
+
+
+class FakeNetworkTools:
+    def __init__(self):
+        self.calls = []
+
+    async def check_port_alive(self, host, port, timeout=30):
+        self.calls.append({"host": host, "port": port, "timeout": timeout})
+        return {
+            "success": True,
+            "port_alive": False,
+            "host": host,
+            "port": port,
+            "data": f"{host}:{port} is not listening",
+        }
+
+
 def test_general_chat_agent_executes_access_relation_tool():
     session_manager = FakeSessionManager()
     llm_client = FakeLLMClient()
@@ -108,12 +179,88 @@ def test_general_chat_agent_executes_access_relation_tool():
             "direction": "outbound",
             "peer_system_code": None,
             "peer_system_name": None,
+            "src_ip": None,
+            "dst_ip": None,
             "page": 1,
             "page_size": 50,
         }
     ]
     assert [event["type"] for event in events] == ["tool_start", "tool_result"]
     assert session_manager.messages[0]["metadata"]["tool_call"]["name"] == "query_access_relations"
+
+
+def test_general_chat_agent_executes_port_check_tool():
+    session_manager = FakeSessionManager()
+    llm_client = FakePortCheckLLMClient()
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    agent = GeneralChatToolAgent(
+        llm_client=llm_client,
+        session_manager=session_manager,
+        session_id="session-port",
+        event_callback=event_callback,
+    )
+    agent.network_tools = FakeNetworkTools()
+
+    async def run_test():
+        return await agent.run(
+            session_messages=[
+                {
+                    "role": "user",
+                    "content": "Please run the selected diagnostic tool.",
+                    "metadata": {},
+                }
+            ],
+            system_prompt="test prompt",
+        )
+
+    response = asyncio.run(run_test())
+
+    assert response == "2.7.8.6:8008 is not listening."
+    assert agent.network_tools.calls == [{"host": "2.7.8.6", "port": 8008, "timeout": 5}]
+    assert [event["type"] for event in events] == ["tool_start", "tool_result"]
+    assert events[0]["tool"] == "check_port_alive"
+    assert session_manager.messages[0]["metadata"]["tool_call"]["name"] == "check_port_alive"
+
+
+def test_general_chat_agent_uses_llm_tool_call_for_explicit_port_check():
+    session_manager = FakeSessionManager()
+    llm_client = FakeExplicitPortCheckSummaryLLMClient()
+    events = []
+
+    async def event_callback(event):
+        events.append(event)
+
+    agent = GeneralChatToolAgent(
+        llm_client=llm_client,
+        session_manager=session_manager,
+        session_id="session-llm-port",
+        event_callback=event_callback,
+    )
+    agent.network_tools = FakeNetworkTools()
+
+    async def run_test():
+        return await agent.run(
+            session_messages=[
+                {
+                    "role": "user",
+                    "content": "请帮我检查10.0.2.20 主机上的 8008 是否正常监听？",
+                    "metadata": {},
+                }
+            ],
+            system_prompt="test prompt",
+        )
+
+    response = asyncio.run(run_test())
+
+    assert response == "10.0.2.20 的 8008 端口当前未监听。"
+    assert llm_client.tool_round == 2
+    assert agent.network_tools.calls == [{"host": "10.0.2.20", "port": 8008, "timeout": 30}]
+    assert [event["type"] for event in events] == ["tool_start", "tool_result"]
+    assert session_manager.messages[0]["metadata"]["tool_call"]["name"] == "check_port_alive"
 
 
 def test_general_chat_agent_includes_tool_history_as_context():

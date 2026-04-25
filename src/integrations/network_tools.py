@@ -3,6 +3,7 @@
 
 提供网络诊断相关的工具函数，用于LLM Agent调用
 """
+import re
 from typing import Optional, List, Dict
 
 from .automation_platform_client import AutomationPlatformClient
@@ -206,10 +207,11 @@ class NetworkTools:
             )
             stdout = result.stdout.strip()
             no_listener = result.exit_code == 1 and not stdout and not result.stderr.strip()
+            port_alive = bool(re.search(rf":{port}(?!\d)", stdout))
 
             return {
                 "success": result.success or no_listener,
-                "port_alive": bool(stdout),
+                "port_alive": port_alive,
                 "host": result.host,
                 "port": port,
                 "command": result.command,

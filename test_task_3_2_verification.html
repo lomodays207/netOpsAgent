@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task 3.2 Verification - renderEditMode</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .user-message {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .message-text {
+            margin: 5px 0;
+        }
+        .message-actions {
+            margin-top: 5px;
+        }
+        .edit-message-textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        .edit-buttons {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .edit-cancel-btn, .edit-send-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .edit-cancel-btn {
+            background: #6c757d;
+            color: white;
+        }
+        .edit-send-btn {
+            background: #007bff;
+            color: white;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Task 3.2 Verification: renderEditMode Implementation</h1>
+    
+    <div class="test-section">
+        <h2>Test Case 1: Basic renderEditMode Functionality</h2>
+        <div id="test-message-1" class="user-message">
+            <div class="message-text">这是一条测试消息</div>
+            <div class="message-actions">
+                <button>📋</button>
+                <button>✏️</button>
+            </div>
+        </div>
+        <button onclick="runTest1()">Run Test 1</button>
+        <div id="result-1" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Case 2: Verify data-editing Attribute</h2>
+        <div id="test-message-2" class="user-message">
+            <div class="message-text">另一条测试消息</div>
+            <div class="message-actions">
+                <button>📋</button>
+                <button>✏️</button>
+            </div>
+        </div>
+        <button onclick="runTest2()">Run Test 2</button>
+        <div id="result-2" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Case 3: Verify Actions Container Hidden</h2>
+        <div id="test-message-3" class="user-message">
+            <div class="message-text">第三条测试消息</div>
+            <div class="message-actions">
+                <button>📋</button>
+                <button>✏️</button>
+            </div>
+        </div>
+        <button onclick="runTest3()">Run Test 3</button>
+        <div id="result-3" class="result"></div>
+    </div>
+
+    <script>
+        // Copy EditModeRenderer class from app.js
+        class EditModeRenderer {
+            createEditableTextarea(text) {
+                if (typeof text !== 'string') {
+                    console.error('[EditModeRenderer] createEditableTextarea 失败: text 参数必须是字符串');
+                    text = '';
+                }
+
+                console.log('[EditModeRenderer] 创建可编辑文本框');
+
+                const textarea = document.createElement('textarea');
+                textarea.className = 'edit-message-textarea';
+                textarea.value = text;
+                
+                textarea.setAttribute('aria-label', '编辑消息内容');
+                
+                const lineCount = text.split('\n').length;
+                const estimatedRows = Math.max(3, Math.min(lineCount + 1, 10));
+                textarea.rows = estimatedRows;
+
+                textarea.addEventListener('input', () => {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = textarea.scrollHeight + 'px';
+                });
+
+                console.log('[EditModeRenderer] ✓ 文本框创建成功，初始行数:', estimatedRows);
+
+                return textarea;
+            }
+
+            createEditButtons() {
+                console.log('[EditModeRenderer] 创建编辑按钮组');
+
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.className = 'edit-buttons';
+
+                const cancelButton = document.createElement('button');
+                cancelButton.type = 'button';
+                cancelButton.className = 'edit-cancel-btn';
+                cancelButton.textContent = '取消';
+                cancelButton.setAttribute('aria-label', '取消编辑');
+
+                const sendButton = document.createElement('button');
+                sendButton.type = 'button';
+                sendButton.className = 'edit-send-btn';
+                sendButton.textContent = '发送';
+                sendButton.setAttribute('aria-label', '发送编辑后的消息');
+
+                buttonsContainer.appendChild(cancelButton);
+                buttonsContainer.appendChild(sendButton);
+
+                console.log('[EditModeRenderer] ✓ 按钮组创建成功');
+
+                return buttonsContainer;
+            }
+
+            renderEditMode(messageElement, originalText) {
+                if (!messageElement || !(messageElement instanceof HTMLElement)) {
+                    console.error('[EditModeRenderer] renderEditMode 失败: messageElement 参数必须是有效的 HTMLElement');
+                    return null;
+                }
+
+                if (typeof originalText !== 'string') {
+                    console.error('[EditModeRenderer] renderEditMode 失败: originalText 参数必须是字符串');
+                    return null;
+                }
+
+                console.log('[EditModeRenderer] 渲染编辑模式');
+
+                const messageTextEl = messageElement.querySelector('.message-text');
+                if (!messageTextEl) {
+                    console.error('[EditModeRenderer] 找不到 .message-text 元素');
+                    return null;
+                }
+
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                if (actionsContainer) {
+                    actionsContainer.style.display = 'none';
+                    console.log('[EditModeRenderer] 已隐藏操作按钮');
+                }
+
+                messageElement.setAttribute('data-original-html', messageTextEl.innerHTML);
+                messageElement.setAttribute('data-original-text', originalText);
+
+                const textarea = this.createEditableTextarea(originalText);
+
+                const buttonsContainer = this.createEditButtons();
+                const cancelButton = buttonsContainer.querySelector('.edit-cancel-btn');
+                const sendButton = buttonsContainer.querySelector('.edit-send-btn');
+
+                messageTextEl.innerHTML = '';
+                messageTextEl.appendChild(textarea);
+                messageTextEl.appendChild(buttonsContainer);
+
+                messageElement.setAttribute('data-editing', 'true');
+
+                setTimeout(() => {
+                    textarea.focus();
+                    const textLength = textarea.value.length;
+                    textarea.setSelectionRange(textLength, textLength);
+                    console.log('[EditModeRenderer] ✓ 文本框已聚焦，光标位于末尾');
+                }, 0);
+
+                console.log('[EditModeRenderer] ✓ 编辑模式渲染完成');
+
+                return {
+                    textarea,
+                    cancelButton,
+                    sendButton
+                };
+            }
+        }
+
+        const renderer = new EditModeRenderer();
+
+        function runTest1() {
+            const resultDiv = document.getElementById('result-1');
+            const messageEl = document.getElementById('test-message-1');
+            const originalText = messageEl.querySelector('.message-text').textContent;
+            
+            try {
+                const result = renderer.renderEditMode(messageEl, originalText);
+                
+                if (result && result.textarea && result.cancelButton && result.sendButton) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        ✓ Test Passed<br>
+                        - Textarea created: ${result.textarea ? 'Yes' : 'No'}<br>
+                        - Cancel button created: ${result.cancelButton ? 'Yes' : 'No'}<br>
+                        - Send button created: ${result.sendButton ? 'Yes' : 'No'}<br>
+                        - Textarea value: "${result.textarea.value}"
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = '✗ Test Failed: renderEditMode did not return expected elements';
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `✗ Test Failed: ${error.message}`;
+            }
+        }
+
+        function runTest2() {
+            const resultDiv = document.getElementById('result-2');
+            const messageEl = document.getElementById('test-message-2');
+            const originalText = messageEl.querySelector('.message-text').textContent;
+            
+            try {
+                renderer.renderEditMode(messageEl, originalText);
+                
+                const hasEditingAttr = messageEl.hasAttribute('data-editing');
+                const editingValue = messageEl.getAttribute('data-editing');
+                
+                if (hasEditingAttr && editingValue === 'true') {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        ✓ Test Passed<br>
+                        - data-editing attribute set: Yes<br>
+                        - data-editing value: "${editingValue}"
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `✗ Test Failed: data-editing="${editingValue}" (expected "true")`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `✗ Test Failed: ${error.message}`;
+            }
+        }
+
+        function runTest3() {
+            const resultDiv = document.getElementById('result-3');
+            const messageEl = document.getElementById('test-message-3');
+            const originalText = messageEl.querySelector('.message-text').textContent;
+            
+            try {
+                renderer.renderEditMode(messageEl, originalText);
+                
+                const actionsContainer = messageEl.querySelector('.message-actions');
+                const isHidden = actionsContainer && actionsContainer.style.display === 'none';
+                
+                if (isHidden) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        ✓ Test Passed<br>
+                        - Actions container hidden: Yes<br>
+                        - Display style: "${actionsContainer.style.display}"
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `✗ Test Failed: Actions container not hidden (display: ${actionsContainer ? actionsContainer.style.display : 'N/A'})`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `✗ Test Failed: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
