@@ -74,6 +74,33 @@ class FakeLLMClient:
         return AIMessage(content="fallback")
 
 
+class FailingLLMClient:
+    def invoke_langchain_messages_with_tools(self, messages, tools, temperature=None, max_tokens=None):
+        raise RuntimeError("llm unavailable")
+
+
+class RecordingTraceRecorder:
+    def __init__(self):
+        self.calls = []
+
+    def start_trace(self, **kwargs):
+        self.calls.append(("start_trace", kwargs))
+        return "trace_chat_1"
+
+    def start_tool_call(self, **kwargs):
+        self.calls.append(("start_tool_call", kwargs))
+        return "tool_chat_1"
+
+    def complete_tool_call(self, **kwargs):
+        self.calls.append(("complete_tool_call", kwargs))
+
+    def complete_trace(self, **kwargs):
+        self.calls.append(("complete_trace", kwargs))
+
+    def fail_trace(self, **kwargs):
+        self.calls.append(("fail_trace", kwargs))
+
+
 def test_general_chat_agent_executes_access_relation_tool():
     session_manager = FakeSessionManager()
     llm_client = FakeLLMClient()
@@ -108,6 +135,8 @@ def test_general_chat_agent_executes_access_relation_tool():
             "direction": "outbound",
             "peer_system_code": None,
             "peer_system_name": None,
+            "src_ip": None,
+            "dst_ip": None,
             "page": 1,
             "page_size": 50,
         }
@@ -147,3 +176,78 @@ def test_general_chat_agent_includes_tool_history_as_context():
     ]
     assert history_messages
     assert "N-CRM" in history_messages[0].content
+
+
+def test_general_chat_agent_records_trace_without_tool_calls():
+    class DirectAnswerLLMClient:
+        def invoke_langchain_messages_with_tools(self, messages, tools, temperature=None, max_tokens=None):
+            return AIMessage(content="direct answer")
+
+        def invoke_langchain_messages(self, messages, temperature=None, max_tokens=None):
+            return AIMessage(content="unused")
+
+    recorder = RecordingTraceRecorder()
+    agent = GeneralChatToolAgent(
+        llm_client=DirectAnswerLLMClient(),
+        session_manager=FakeSessionManager(),
+        session_id="session-3",
+        trace_recorder=recorder,
+    )
+
+    async def run_test():
+        return await agent.run(
+            session_messages=[{"role": "user", "content": "hello", "metadata": {}}],
+            system_prompt="test prompt",
+        )
+
+    response = asyncio.run(run_test())
+
+    assert response == "direct answer"
+    assert [name for name, _ in recorder.calls] == ["start_trace", "complete_trace"]
+    assert recorder.calls[0][1]["request_type"] == "general_chat"
+
+
+def test_general_chat_agent_records_tool_trace_and_failure():
+    recorder = RecordingTraceRecorder()
+    agent = GeneralChatToolAgent(
+        llm_client=FakeLLMClient(),
+        session_manager=FakeSessionManager(),
+        session_id="session-4",
+        trace_recorder=recorder,
+    )
+
+    async def run_test():
+        return await agent.run(
+            session_messages=[{"role": "user", "content": "show n-crm access", "metadata": {}}],
+            system_prompt="test prompt",
+        )
+
+    response = asyncio.run(run_test())
+
+    assert response == "Found 1 outbound access relation for N-CRM."
+    assert [name for name, _ in recorder.calls] == [
+        "start_trace",
+        "start_tool_call",
+        "complete_tool_call",
+        "complete_trace",
+    ]
+
+    failing_agent = GeneralChatToolAgent(
+        llm_client=FailingLLMClient(),
+        session_manager=FakeSessionManager(),
+        session_id="session-5",
+        trace_recorder=recorder,
+    )
+
+    async def run_failing_test():
+        return await failing_agent.run(
+            session_messages=[{"role": "user", "content": "hello", "metadata": {}}],
+            system_prompt="test prompt",
+        )
+
+    try:
+        asyncio.run(run_failing_test())
+    except RuntimeError:
+        pass
+
+    assert recorder.calls[-1][0] == "fail_trace"

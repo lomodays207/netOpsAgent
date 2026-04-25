@@ -7,6 +7,7 @@
 let currentSessionId = null;
 let currentFilter = 'all';
 let sessions = [];
+let sessionTracesExpanded = true;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,6 +32,11 @@ function initializeEventListeners() {
             filterSessions();
         });
     });
+
+    const tracesToggle = document.getElementById('session-traces-toggle');
+    if (tracesToggle) {
+        tracesToggle.addEventListener('click', toggleSessionTraces);
+    }
 }
 
 /**
@@ -190,12 +196,14 @@ async function loadMessages(sessionId) {
         messagesHeader.style.display = 'block';
         sessionTitle.textContent = truncateSessionId(sessionId);
         sessionInfo.textContent = session ? session.task_description : '';
+        await loadSessionTraces(sessionId);
 
         // Display messages
         displayMessages(messages);
 
     } catch (error) {
         console.error('Error loading messages:', error);
+        resetSessionTraces();
         messagesContent.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">⚠️</div>
@@ -203,6 +211,119 @@ async function loadMessages(sessionId) {
             </div>
         `;
     }
+}
+
+async function loadSessionTraces(sessionId) {
+    const panel = document.getElementById('session-traces-panel');
+    const list = document.getElementById('session-traces-list');
+    const meta = document.getElementById('session-traces-meta');
+
+    if (!panel || !list || !meta) {
+        return;
+    }
+
+    panel.hidden = false;
+    meta.textContent = '加载中...';
+    list.innerHTML = '<div class="session-trace-empty">正在加载追踪记录...</div>';
+
+    try {
+        const response = await fetch(`/api/v1/sessions/${sessionId}/traces`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch session traces');
+        }
+
+        const traces = await response.json();
+        renderSessionTraces(Array.isArray(traces) ? traces : []);
+    } catch (error) {
+        console.error('Error loading session traces:', error);
+        meta.textContent = '加载失败';
+        list.innerHTML = '<div class="session-trace-empty">无法加载追踪记录</div>';
+    }
+}
+
+function renderSessionTraces(traces) {
+    const list = document.getElementById('session-traces-list');
+    const meta = document.getElementById('session-traces-meta');
+
+    meta.textContent = `${traces.length} 条`;
+
+    if (!Array.isArray(traces) || traces.length === 0) {
+        list.innerHTML = '<div class="session-trace-empty">当前会话暂无追踪记录</div>';
+        return;
+    }
+
+    list.innerHTML = traces.map(trace => `
+        <article class="session-trace-item" data-trace-id="${trace.trace_id}">
+            <div class="session-trace-top">
+                <span class="session-trace-id">${escapeHtml(trace.trace_id)}</span>
+                <span class="status-badge ${trace.status}">${getStatusText(trace.status)}</span>
+            </div>
+            <div class="session-description">${escapeHtml(trace.user_input || '无用户输入')}</div>
+            <div class="session-trace-meta-row">
+                <span>${formatRequestTypeLabel(trace.request_type)}</span>
+                <span>${formatTime(trace.created_at)}</span>
+                <span>${formatTraceDuration(trace.total_time)}</span>
+            </div>
+        </article>
+    `).join('');
+
+    list.querySelectorAll('.session-trace-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const traceId = item.dataset.traceId;
+            window.location.href = `/static/trace_detail.html?trace_id=${traceId}`;
+        });
+    });
+
+    syncSessionTracesVisibility();
+}
+
+function toggleSessionTraces() {
+    sessionTracesExpanded = !sessionTracesExpanded;
+    syncSessionTracesVisibility();
+}
+
+function syncSessionTracesVisibility() {
+    const body = document.getElementById('session-traces-body');
+    if (!body) {
+        return;
+    }
+    body.hidden = !sessionTracesExpanded;
+}
+
+function resetSessionTraces() {
+    const panel = document.getElementById('session-traces-panel');
+    const list = document.getElementById('session-traces-list');
+    const meta = document.getElementById('session-traces-meta');
+    if (panel) {
+        panel.hidden = true;
+    }
+    if (list) {
+        list.innerHTML = '';
+    }
+    if (meta) {
+        meta.textContent = '0 条';
+    }
+}
+
+function formatRequestTypeLabel(requestType) {
+    if (requestType === 'diagnosis') {
+        return '诊断';
+    }
+    if (requestType === 'general_chat') {
+        return '通用聊天';
+    }
+    return requestType || '未知类型';
+}
+
+function formatTraceDuration(totalTime) {
+    if (totalTime === null || totalTime === undefined || Number.isNaN(Number(totalTime))) {
+        return '-';
+    }
+    const seconds = Number(totalTime);
+    if (seconds < 1) {
+        return `${Math.round(seconds * 1000)} ms`;
+    }
+    return `${seconds.toFixed(2)} s`;
 }
 
 /**

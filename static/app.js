@@ -133,6 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 添加"新对话"按钮
     addNewChatButton();
+    addTraceCenterButton();
 
     // 停止按钮
     stopBtn.addEventListener('click', stopGeneration);
@@ -432,6 +433,18 @@ function addNewChatButton() {
     });
     header.style.position = 'relative';
     header.appendChild(newChatBtn);
+}
+
+function addTraceCenterButton() {
+    const header = document.querySelector('header');
+    const traceBtn = document.createElement('button');
+    traceBtn.textContent = '追踪记录';
+    traceBtn.className = 'trace-nav-btn';
+    traceBtn.addEventListener('click', () => {
+        window.location.href = '/static/traces.html';
+    });
+    header.style.position = 'relative';
+    header.appendChild(traceBtn);
 }
 
 // 添加系统消息

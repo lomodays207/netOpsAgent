@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>追踪记录 - netOpsAgent</title>
+    <link rel="stylesheet" href="/static/style.css?v=2.5">
+</head>
+<body class="trace-browser">
+    <main class="trace-page-shell">
+        <header class="trace-page-header">
+            <div>
+                <p class="trace-kicker">LLM Request Tracing</p>
+                <h1>追踪记录</h1>
+                <p class="trace-page-subtitle">查看诊断流与通用聊天流的完整请求链路、状态与耗时。</p>
+            </div>
+            <div class="trace-page-links">
+                <a href="/" class="trace-link-btn">返回首页</a>
+                <a href="/static/history.html" class="trace-link-btn trace-link-btn-secondary">会话历史</a>
+            </div>
+        </header>
+
+        <section class="trace-stats-grid" id="trace-stats-grid">
+            <article class="trace-stat-card">
+                <span class="trace-stat-label">总记录数</span>
+                <strong id="trace-stats-total">-</strong>
+            </article>
+            <article class="trace-stat-card">
+                <span class="trace-stat-label">平均耗时</span>
+                <strong id="trace-stats-average">-</strong>
+            </article>
+            <article class="trace-stat-card">
+                <span class="trace-stat-label">最近 24 小时</span>
+                <strong id="trace-stats-24h">-</strong>
+            </article>
+            <article class="trace-stat-card">
+                <span class="trace-stat-label">最近 7 天</span>
+                <strong id="trace-stats-7d">-</strong>
+            </article>
+        </section>
+
+        <section class="trace-toolbar">
+            <label class="trace-field">
+                <span>搜索</span>
+                <input id="trace-search-input" type="search" placeholder="输入 trace_id、session_id 或用户问题关键词">
+            </label>
+            <label class="trace-field">
+                <span>请求类型</span>
+                <select id="trace-request-type-filter">
+                    <option value="">全部类型</option>
+                    <option value="diagnosis">诊断</option>
+                    <option value="general_chat">通用聊天</option>
+                </select>
+            </label>
+            <label class="trace-field">
+                <span>会话 ID</span>
+                <input id="trace-session-filter" type="text" placeholder="可选 session_id">
+            </label>
+            <label class="trace-field">
+                <span>开始时间</span>
+                <input id="trace-start-time" type="datetime-local">
+            </label>
+            <label class="trace-field">
+                <span>结束时间</span>
+                <input id="trace-end-time" type="datetime-local">
+            </label>
+            <div class="trace-toolbar-actions">
+                <button id="refresh-traces-btn" class="trace-action-btn trace-action-btn-secondary" type="button">刷新</button>
+                <button id="export-traces-btn" class="trace-action-btn" type="button">导出 CSV</button>
+            </div>
+        </section>
+
+        <section class="trace-feedback-strip" id="traces-feedback" hidden></section>
+
+        <section class="trace-list-section">
+            <div class="trace-list-head">
+                <div>追踪记录列表</div>
+                <div id="traces-page-info">第 1 页</div>
+            </div>
+            <div class="trace-list" id="traces-list"></div>
+            <div class="trace-empty-state" id="traces-empty" hidden>暂无追踪记录</div>
+        </section>
+
+        <nav class="trace-pagination">
+            <button id="traces-prev-page" class="trace-action-btn trace-action-btn-secondary" type="button">上一页</button>
+            <button id="traces-next-page" class="trace-action-btn trace-action-btn-secondary" type="button">下一页</button>
+        </nav>
+    </main>
+
+    <script src="/static/traces.js?v=1.0"></script>
+</body>
+</html>

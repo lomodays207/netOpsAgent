@@ -115,15 +115,57 @@ class GeneralChatToolAgent:
         session_manager: Any,
         session_id: str,
         event_callback: Optional[Callable[[Dict[str, Any]], Any]] = None,
-        max_tool_rounds: int = 3
+        max_tool_rounds: int = 3,
+        trace_recorder: Optional[Any] = None,
     ):
         self.llm_client = llm_client
         self.session_manager = session_manager
         self.session_id = session_id
         self.event_callback = event_callback
         self.max_tool_rounds = max_tool_rounds
+        self.trace_recorder = trace_recorder
+        self._active_trace_id: Optional[str] = None
         self.tools = self._create_tools()
         self._tools_by_name = {tool.name: tool for tool in self.tools}
+
+    def _ensure_trace(self, session_messages: List[Dict[str, Any]]) -> Optional[str]:
+        if self.trace_recorder is None:
+            return None
+
+        if self._active_trace_id is None:
+            user_input = ""
+            for message in reversed(session_messages):
+                if message.get("role") == "user":
+                    user_input = message.get("content", "")
+                    break
+
+            self._active_trace_id = self.trace_recorder.start_trace(
+                session_id=self.session_id,
+                user_input=user_input,
+                request_type="general_chat",
+            )
+
+        return self._active_trace_id
+
+    def _complete_active_trace(self, final_answer: Any) -> None:
+        if self.trace_recorder is None or self._active_trace_id is None:
+            return
+
+        self.trace_recorder.complete_trace(
+            trace_id=self._active_trace_id,
+            final_answer=final_answer,
+        )
+        self._active_trace_id = None
+
+    def _fail_active_trace(self, error_message: Any) -> None:
+        if self.trace_recorder is None or self._active_trace_id is None:
+            return
+
+        self.trace_recorder.fail_trace(
+            trace_id=self._active_trace_id,
+            error_message=error_message,
+        )
+        self._active_trace_id = None
 
     def _create_tools(self) -> List[StructuredTool]:
         async def query_access_relations_func(
@@ -299,29 +341,45 @@ class GeneralChatToolAgent:
             system_prompt=system_prompt
         )
         tool_step = 1
+        trace_id = self._ensure_trace(session_messages)
 
         for _ in range(self.max_tool_rounds):
-            response = self.llm_client.invoke_langchain_messages_with_tools(
-                messages=messages,
-                tools=self.tools,
-                temperature=0.2,
-            )
+            try:
+                response = self.llm_client.invoke_langchain_messages_with_tools(
+                    messages=messages,
+                    tools=self.tools,
+                    temperature=0.2,
+                )
+            except Exception as exc:
+                self._fail_active_trace(str(exc))
+                raise
             messages.append(response)
 
             tool_calls = getattr(response, "tool_calls", None) or []
             if not tool_calls:
-                return self._stringify_content(response.content)
+                final_answer = self._stringify_content(response.content)
+                self._complete_active_trace(final_answer)
+                return final_answer
 
             for tool_call in tool_calls:
                 tool_name = tool_call.get("name")
                 arguments = tool_call.get("args") or tool_call.get("arguments") or {}
                 tool = self._tools_by_name.get(tool_name)
+                tool_call_trace_id = None
+                if self.trace_recorder and trace_id:
+                    tool_call_trace_id = self.trace_recorder.start_tool_call(
+                        trace_id=trace_id,
+                        step_number=tool_step,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                    )
                 if tool is None:
                     result = {
                         "success": False,
                         "error": f"未知工具: {tool_name}",
                         "data": f"未知工具: {tool_name}",
                     }
+                    execution_time = 0.0
                 else:
                     await self._emit_event({
                         "type": "tool_start",
@@ -356,6 +414,14 @@ class GeneralChatToolAgent:
                         execution_time=execution_time,
                     )
 
+                if self.trace_recorder and tool_call_trace_id:
+                    self.trace_recorder.complete_tool_call(
+                        tool_call_id=tool_call_trace_id,
+                        result=result,
+                        execution_time=execution_time,
+                        status="success" if result.get("success") else "failed",
+                    )
+
                 messages.append(
                     ToolMessage(
                         content=json.dumps(result, ensure_ascii=False),
@@ -365,8 +431,15 @@ class GeneralChatToolAgent:
                 tool_step += 1
 
         messages.append(HumanMessage(content="请基于已经获得的工具结果给出最终答复，不要继续调用工具。"))
-        final_response = self.llm_client.invoke_langchain_messages(
-            messages=messages,
-            temperature=0.2,
-        )
-        return self._stringify_content(final_response.content)
+        try:
+            final_response = self.llm_client.invoke_langchain_messages(
+                messages=messages,
+                temperature=0.2,
+            )
+        except Exception as exc:
+            self._fail_active_trace(str(exc))
+            raise
+
+        final_answer = self._stringify_content(final_response.content)
+        self._complete_active_trace(final_answer)
+        return final_answer

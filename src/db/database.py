@@ -6,7 +6,7 @@ SQLite 数据库管理模块
 import aiosqlite
 import os
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -34,6 +34,7 @@ class SessionDatabase:
         """初始化数据库表结构"""
         async with aiosqlite.connect(self.db_path) as db:
             # 启用 WAL 模式（Write-Ahead Logging）提高并发性能
+            await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("PRAGMA journal_mode=WAL")
             
             # 创建会话表
@@ -80,6 +81,48 @@ class SessionDatabase:
                     updated_at TIMESTAMP NOT NULL
                 )
             """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS traces (
+                    trace_id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    user_input TEXT NOT NULL,
+                    request_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    completed_at TIMESTAMP,
+                    total_time REAL,
+                    final_answer TEXT,
+                    error_message TEXT
+                )
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS reasoning_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trace_id TEXT NOT NULL,
+                    step_number INTEGER NOT NULL,
+                    reasoning_content TEXT NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
+                    FOREIGN KEY (trace_id) REFERENCES traces(trace_id) ON DELETE CASCADE
+                )
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS tool_calls (
+                    tool_call_id TEXT PRIMARY KEY,
+                    trace_id TEXT NOT NULL,
+                    step_number INTEGER,
+                    tool_name TEXT NOT NULL,
+                    arguments TEXT,
+                    status TEXT NOT NULL,
+                    started_at TIMESTAMP NOT NULL,
+                    completed_at TIMESTAMP,
+                    execution_time REAL,
+                    result TEXT,
+                    FOREIGN KEY (trace_id) REFERENCES traces(trace_id) ON DELETE CASCADE
+                )
+            """)
             
             # 创建索引
             await db.execute("""
@@ -105,6 +148,16 @@ class SessionDatabase:
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_assets_dst_system
                 ON network_access_assets(dst_system)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_traces_session_id
+                ON traces(session_id)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_traces_created_at
+                ON traces(created_at)
             """)
             
             await db.commit()
@@ -343,6 +396,358 @@ class SessionDatabase:
             return []
 
     # ===== 网络访问关系资产 CRUD =====
+
+    async def create_trace(self, trace_data: Dict[str, Any]) -> bool:
+        """Persist a trace envelope."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute("""
+                    INSERT INTO traces (
+                        trace_id, session_id, user_input, request_type, status,
+                        created_at, completed_at, total_time, final_answer, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    trace_data["trace_id"],
+                    trace_data.get("session_id"),
+                    trace_data["user_input"],
+                    trace_data["request_type"],
+                    trace_data["status"],
+                    trace_data["created_at"],
+                    trace_data.get("completed_at"),
+                    trace_data.get("total_time"),
+                    trace_data.get("final_answer"),
+                    trace_data.get("error_message"),
+                ))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"[SessionDatabase] 鍒涘缓 trace 澶辫触: {e}")
+            return False
+
+    async def update_trace(self, trace_id: str, updates: Dict[str, Any]) -> bool:
+        """Update trace fields by trace id."""
+        try:
+            set_clauses = []
+            values = []
+
+            for key, value in updates.items():
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+
+            if not set_clauses:
+                return True
+
+            values.append(trace_id)
+            sql = f"UPDATE traces SET {', '.join(set_clauses)} WHERE trace_id = ?"
+
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute(sql, values)
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"[SessionDatabase] 鏇存柊 trace 澶辫触: {e}")
+            return False
+
+    async def add_reasoning_step(self, step_data: Dict[str, Any]) -> bool:
+        """Insert a reasoning step for a trace."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute("""
+                    INSERT INTO reasoning_steps (
+                        trace_id, step_number, reasoning_content, timestamp
+                    ) VALUES (?, ?, ?, ?)
+                """, (
+                    step_data["trace_id"],
+                    step_data["step_number"],
+                    step_data["reasoning_content"],
+                    step_data["timestamp"],
+                ))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"[SessionDatabase] 鏂板 reasoning step 澶辫触: {e}")
+            return False
+
+    async def create_tool_call(self, tool_call_data: Dict[str, Any]) -> bool:
+        """Insert a tool call record for a trace."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute("""
+                    INSERT INTO tool_calls (
+                        tool_call_id, trace_id, step_number, tool_name, arguments,
+                        status, started_at, completed_at, execution_time, result
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    tool_call_data["tool_call_id"],
+                    tool_call_data["trace_id"],
+                    tool_call_data.get("step_number"),
+                    tool_call_data["tool_name"],
+                    tool_call_data.get("arguments"),
+                    tool_call_data["status"],
+                    tool_call_data["started_at"],
+                    tool_call_data.get("completed_at"),
+                    tool_call_data.get("execution_time"),
+                    tool_call_data.get("result"),
+                ))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"[SessionDatabase] 鍒涘缓 tool call 澶辫触: {e}")
+            return False
+
+    async def complete_tool_call(self, tool_call_id: str, updates: Dict[str, Any]) -> bool:
+        """Update a tool call record by tool_call_id."""
+        try:
+            set_clauses = []
+            values = []
+
+            for key, value in updates.items():
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+
+            if not set_clauses:
+                return True
+
+            values.append(tool_call_id)
+            sql = f"UPDATE tool_calls SET {', '.join(set_clauses)} WHERE tool_call_id = ?"
+
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute(sql, values)
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"[SessionDatabase] 鏇存柊 tool call 澶辫触: {e}")
+            return False
+
+    async def list_traces(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        session_id: Optional[str] = None,
+        request_type: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        query: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """List traces with filters and pagination."""
+        try:
+            conditions = []
+            params: List[Any] = []
+
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+            if request_type:
+                conditions.append("request_type = ?")
+                params.append(request_type)
+            if start_time:
+                conditions.append("created_at >= ?")
+                params.append(start_time)
+            if end_time:
+                conditions.append("created_at <= ?")
+                params.append(end_time)
+            if query:
+                conditions.append("(user_input LIKE ? OR trace_id = ? OR session_id = ?)")
+                params.extend([f"%{query}%", query, query])
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                count_sql = f"SELECT COUNT(*) FROM traces {where_clause}"
+                async with db.execute(count_sql, params) as cursor:
+                    row = await cursor.fetchone()
+                    total = row[0] if row else 0
+
+                offset = max(page - 1, 0) * max(page_size, 1)
+                data_sql = (
+                    f"SELECT * FROM traces {where_clause} "
+                    f"ORDER BY created_at DESC LIMIT ? OFFSET ?"
+                )
+                async with db.execute(data_sql, params + [page_size, offset]) as cursor:
+                    rows = await cursor.fetchall()
+                    items = [dict(row) for row in rows]
+
+            return {"items": items, "total": total, "page": page, "page_size": page_size}
+        except Exception as e:
+            print(f"[SessionDatabase] 鏌ヨ trace 鍒楄〃澶辫触: {e}")
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+    async def get_trace_detail(self, trace_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a trace with ordered reasoning steps and tool calls."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                async with db.execute(
+                    "SELECT * FROM traces WHERE trace_id = ?",
+                    (trace_id,),
+                ) as cursor:
+                    trace_row = await cursor.fetchone()
+                    if not trace_row:
+                        return None
+
+                async with db.execute(
+                    """
+                    SELECT * FROM reasoning_steps
+                    WHERE trace_id = ?
+                    ORDER BY step_number ASC, id ASC
+                    """,
+                    (trace_id,),
+                ) as cursor:
+                    reasoning_steps = [dict(row) for row in await cursor.fetchall()]
+
+                async with db.execute(
+                    """
+                    SELECT * FROM tool_calls
+                    WHERE trace_id = ?
+                    ORDER BY step_number ASC, started_at ASC, tool_call_id ASC
+                    """,
+                    (trace_id,),
+                ) as cursor:
+                    tool_calls = [dict(row) for row in await cursor.fetchall()]
+
+            return {
+                "trace": dict(trace_row),
+                "reasoning_steps": reasoning_steps,
+                "tool_calls": tool_calls,
+            }
+        except Exception as e:
+            print(f"[SessionDatabase] 鑾峰彇 trace 璇︽儏澶辫触: {e}")
+            return None
+
+    async def get_trace_stats(self) -> Dict[str, Any]:
+        """Aggregate trace statistics for dashboards and summaries."""
+        try:
+            now = datetime.now(timezone.utc)
+            cutoff_24_hours = (now - timedelta(hours=24)).isoformat()
+            cutoff_7_days = (now - timedelta(days=7)).isoformat()
+
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT COUNT(*), AVG(total_time) FROM traces"
+                ) as cursor:
+                    totals_row = await cursor.fetchone()
+
+                async with db.execute(
+                    "SELECT request_type, COUNT(*) FROM traces GROUP BY request_type"
+                ) as cursor:
+                    by_request_type = {row[0]: row[1] for row in await cursor.fetchall()}
+
+                async with db.execute(
+                    "SELECT status, COUNT(*) FROM traces GROUP BY status"
+                ) as cursor:
+                    by_status = {row[0]: row[1] for row in await cursor.fetchall()}
+
+                async with db.execute(
+                    "SELECT COUNT(*) FROM traces WHERE created_at >= ?",
+                    (cutoff_24_hours,),
+                ) as cursor:
+                    last_24_hours_row = await cursor.fetchone()
+
+                async with db.execute(
+                    "SELECT COUNT(*) FROM traces WHERE created_at >= ?",
+                    (cutoff_7_days,),
+                ) as cursor:
+                    last_7_days_row = await cursor.fetchone()
+
+            average_total_time = totals_row[1] if totals_row and totals_row[1] is not None else None
+            if average_total_time is not None:
+                average_total_time = float(average_total_time)
+
+            return {
+                "total": totals_row[0] if totals_row else 0,
+                "by_request_type": by_request_type,
+                "by_status": by_status,
+                "average_total_time": average_total_time,
+                "last_24_hours": last_24_hours_row[0] if last_24_hours_row else 0,
+                "last_7_days": last_7_days_row[0] if last_7_days_row else 0,
+            }
+        except Exception as e:
+            print(f"[SessionDatabase] 鑾峰彇 trace 缁熻澶辫触: {e}")
+            return {
+                "total": 0,
+                "by_request_type": {},
+                "by_status": {},
+                "average_total_time": None,
+                "last_24_hours": 0,
+                "last_7_days": 0,
+            }
+
+    async def list_session_traces(self, session_id: str) -> List[Dict[str, Any]]:
+        """List all traces for a session in ascending time order."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    """
+                    SELECT trace_id, session_id, user_input, request_type, status,
+                           created_at, completed_at, total_time
+                    FROM traces
+                    WHERE session_id = ?
+                    ORDER BY created_at ASC, trace_id ASC
+                    """,
+                    (session_id,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"[SessionDatabase] 鑾峰彇 session traces 澶辫触: {e}")
+            return []
+
+    async def export_traces(
+        self,
+        page: int = 1,
+        page_size: int = 1000,
+        session_id: Optional[str] = None,
+        request_type: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        query: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return filtered traces for CSV export with a hard cap."""
+        limited_page_size = min(max(page_size, 1), 1000)
+        result = await self.list_traces(
+            page=page,
+            page_size=limited_page_size,
+            session_id=session_id,
+            request_type=request_type,
+            start_time=start_time,
+            end_time=end_time,
+            query=query,
+        )
+        return result["items"]
+
+    async def delete_expired_traces(self, retention_days: int) -> int:
+        """Delete traces older than the configured retention window."""
+        try:
+            cutoff_time = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                async with db.execute(
+                    "SELECT COUNT(*) FROM traces WHERE created_at < ?",
+                    (cutoff_time,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    count = row[0] if row else 0
+
+                await db.execute(
+                    "DELETE FROM traces WHERE created_at < ?",
+                    (cutoff_time,),
+                )
+                await db.commit()
+
+                return count
+        except Exception as e:
+            print(f"[SessionDatabase] 娓呯悊杩囨湡 traces 澶辫触: {e}")
+            return 0
 
     async def create_access_asset(self, asset_data: Dict[str, Any]) -> Optional[int]:
         """

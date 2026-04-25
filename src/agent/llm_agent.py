@@ -92,7 +92,8 @@ class LLMAgent:
         self,
         llm_client: Optional[LLMClient] = None,
         verbose: bool = False,
-        max_steps: Optional[int] = None
+        max_steps: Optional[int] = None,
+        trace_recorder: Optional[Any] = None
     ):
         """
         初始化LLM Agent
@@ -112,6 +113,8 @@ class LLMAgent:
 
         self.verbose = verbose
         self.output_formatter = ToolOutputFormatter(verbose=verbose)
+        self.trace_recorder = trace_recorder
+        self._active_trace_id: Optional[str] = None
         self.current_context = []  # 用于存储当前诊断上下文，供 ask_user 使用
 
         # 创建网络工具实例
@@ -131,6 +134,58 @@ class LLMAgent:
 
         # 创建LangChain Tools
         self.tools = self._create_tools()
+
+    def _ensure_trace(self, task: DiagnosticTask, session_id: Optional[str]) -> Optional[str]:
+        if self.trace_recorder is None:
+            return None
+
+        if self._active_trace_id is None:
+            self._active_trace_id = self.trace_recorder.start_trace(
+                session_id=session_id,
+                user_input=task.user_input,
+                request_type="diagnosis",
+            )
+
+        return self._active_trace_id
+
+    def _record_trace_reasoning(self, trace_id: Optional[str], step_number: int, decision: Dict) -> None:
+        if self.trace_recorder is None or not trace_id:
+            return
+
+        reasoning = decision.get("reasoning")
+        if reasoning:
+            self.trace_recorder.add_reasoning_step(
+                trace_id=trace_id,
+                step_number=step_number,
+                content=reasoning,
+            )
+
+    def _complete_active_trace(self, final_answer: Any) -> None:
+        if self.trace_recorder is None or self._active_trace_id is None:
+            return
+
+        self.trace_recorder.complete_trace(
+            trace_id=self._active_trace_id,
+            final_answer=final_answer,
+        )
+        self._active_trace_id = None
+
+    def _fail_active_trace(self, error_message: Any) -> None:
+        if self.trace_recorder is None or self._active_trace_id is None:
+            return
+
+        self.trace_recorder.fail_trace(
+            trace_id=self._active_trace_id,
+            error_message=error_message,
+        )
+        self._active_trace_id = None
+
+    def _interrupt_active_trace(self) -> None:
+        if self.trace_recorder is None or self._active_trace_id is None:
+            return
+
+        self.trace_recorder.interrupt_trace(trace_id=self._active_trace_id)
+        self._active_trace_id = None
 
     def _create_tools(self) -> List[StructuredTool]:
         """创建LangChain工具列表"""
@@ -212,6 +267,7 @@ class LLMAgent:
         context = self._build_initial_context(task)
         self.current_context = context  # 更新当前上下文，供 ask_user 使用
         step_count = 0
+        trace_id = self._ensure_trace(task, session_id)
 
         print(f"\n[LLM Agent] 开始诊断任务: {task.task_id}")
         print(f"  源主机: {task.source}")
@@ -246,13 +302,20 @@ class LLMAgent:
                         "message": "诊断已被用户中止"
                     })
                 # 生成部分报告
+                self._interrupt_active_trace()
                 return self._generate_report(task, context, None)
 
             step_count += 1
             print(f"[LLM Agent] Step {step_count}/{self.max_steps}")
 
             # LLM决策下一步
-            decision = await self._llm_decide_next_step(context, task)
+            try:
+                decision = await self._llm_decide_next_step(context, task)
+            except Exception as exc:
+                self._fail_active_trace(str(exc))
+                raise
+
+            self._record_trace_reasoning(trace_id, step_count, decision)
 
             # 检查是否结束
             if decision.get("conclude", False):
@@ -260,6 +323,8 @@ class LLMAgent:
                 # 发送完成事件
                 if event_callback:
                     report = self._generate_report(task, context, decision)
+                    self._complete_active_trace(report.root_cause)
+                    self._complete_active_trace(report.root_cause)
                     await event_callback({
                         "type": "complete",
                         "report": {
@@ -270,7 +335,9 @@ class LLMAgent:
                         }
                     })
                     return report
-                return self._generate_report(task, context, decision)
+                report = self._generate_report(task, context, decision)
+                self._complete_active_trace(report.root_cause)
+                return report
 
             # 执行工具调用
             if decision.get("tool_calls"):
@@ -289,8 +356,18 @@ class LLMAgent:
                             "arguments": tool_call["arguments"]
                         })
 
+                    tool_call_trace_id = None
+
                     try:
                         # 记录开始时间
+                        if self.trace_recorder and trace_id:
+                            tool_call_trace_id = self.trace_recorder.start_tool_call(
+                                trace_id=trace_id,
+                                step_number=step_count,
+                                tool_name=tool_call["name"],
+                                arguments=tool_call["arguments"],
+                            )
+
                         import time
                         start_time = time.time()
 
@@ -298,6 +375,12 @@ class LLMAgent:
 
                         # 计算执行时间
                         execution_time = time.time() - start_time
+                        if self.trace_recorder and tool_call_trace_id:
+                            self.trace_recorder.complete_tool_call(
+                                tool_call_id=tool_call_trace_id,
+                                result=result,
+                                execution_time=round(execution_time, 2),
+                            )
 
                         # 执行后再次检查停止信号
                         if stop_event and stop_event.is_set():
@@ -411,6 +494,7 @@ class LLMAgent:
         # 恢复上下文
         self.current_context = context
         step_count = len([c for c in context if c.get('tool')]) + 1
+        trace_id = self._ensure_trace(task, session_id)
 
         # 将用户的回答添加到上下文
         context.append({
@@ -448,7 +532,13 @@ class LLMAgent:
             print(f"[LLM Agent] Step {step_count}/{self.max_steps}")
 
             # LLM决策下一步
-            decision = await self._llm_decide_next_step(context, task)
+            try:
+                decision = await self._llm_decide_next_step(context, task)
+            except Exception as exc:
+                self._fail_active_trace(str(exc))
+                raise
+
+            self._record_trace_reasoning(trace_id, step_count, decision)
 
             # 检查是否结束
             if decision.get("conclude", False):
@@ -466,7 +556,9 @@ class LLMAgent:
                         }
                     })
                     return report
-                return self._generate_report(task, context, decision)
+                report = self._generate_report(task, context, decision)
+                self._complete_active_trace(report.root_cause)
+                return report
 
             # 执行工具调用
             if decision.get("tool_calls"):

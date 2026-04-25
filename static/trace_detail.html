@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>追踪详情 - netOpsAgent</title>
+    <link rel="stylesheet" href="/static/style.css?v=2.5">
+</head>
+<body class="trace-browser">
+    <main class="trace-page-shell trace-detail-shell">
+        <header class="trace-page-header">
+            <div>
+                <p class="trace-kicker">Trace Detail</p>
+                <h1>追踪详情</h1>
+                <p class="trace-page-subtitle">查看一次请求的推理步骤、工具调用与最终结果。</p>
+            </div>
+            <div class="trace-page-links">
+                <a href="/static/traces.html" class="trace-link-btn">返回追踪列表</a>
+                <a href="/static/history.html" class="trace-link-btn trace-link-btn-secondary">会话历史</a>
+            </div>
+        </header>
+
+        <section class="trace-feedback-strip" id="trace-detail-feedback" hidden></section>
+
+        <section class="trace-overview-card" id="trace-overview">
+            <div class="trace-loading-card">正在加载追踪详情...</div>
+        </section>
+
+        <section class="trace-detail-grid">
+            <article class="trace-detail-card">
+                <div class="trace-section-heading">
+                    <h2>推理步骤</h2>
+                    <p>按 step_number 顺序展示</p>
+                </div>
+                <div id="reasoning-steps-list" class="trace-timeline-list"></div>
+            </article>
+
+            <article class="trace-detail-card">
+                <div class="trace-section-heading">
+                    <h2>工具调用</h2>
+                    <p>展示参数、结果与状态</p>
+                </div>
+                <div id="tool-calls-list" class="trace-tool-call-list"></div>
+            </article>
+        </section>
+
+        <section class="trace-detail-card">
+            <div class="trace-section-heading">
+                <h2>最终回答</h2>
+                <p>如无最终回答则显示空状态</p>
+            </div>
+            <pre id="final-answer" class="trace-final-answer">-</pre>
+        </section>
+    </main>
+
+    <script src="/static/trace_detail.js?v=1.0"></script>
+</body>
+</html>

@@ -167,3 +167,15 @@ make clean
 ## 致谢
 
 感谢所有为本项目做出贡献的开发者！
+
+
+## Tracing
+
+Tracing support is available and disabled by default.
+
+- Configuration: `.env.example`
+- Guide: `docs/tracing_guide.md`
+- Pages:
+- `/static/traces.html`
+- `/static/trace_detail.html`
+- `/static/history.html`

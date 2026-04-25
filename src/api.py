@@ -8,10 +8,13 @@ API 文档：
     http://localhost:8000/docs
 """
 import asyncio
+import csv
+import io
+import re
 import uuid
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 import json
 
 from fastapi import FastAPI, HTTPException, Request
@@ -29,6 +32,7 @@ from .agent.general_chat_agent import (
 from .agent.llm_agent import LLMAgent, NeedUserInputException
 from .integrations import LLMClient
 from .session_manager import get_session_manager, DiagnosisSession
+from .tracing.metrics import get_trace_runtime_metrics, record_trace_query
 
 # 加载环境变量
 load_dotenv()
@@ -130,6 +134,18 @@ class RenameSessionRequest(BaseModel):
 
 
 # 响应模型
+class TraceExportRequest(BaseModel):
+    """Tracing export request."""
+
+    page: int = Field(default=1, ge=1, description="Page number")
+    page_size: int = Field(default=1000, ge=1, description="Page size, max 1000")
+    session_id: Optional[str] = Field(default=None, description="Optional session filter")
+    request_type: Optional[str] = Field(default=None, description="Optional request type filter")
+    start_time: Optional[str] = Field(default=None, description="Optional lower time bound")
+    end_time: Optional[str] = Field(default=None, description="Optional upper time bound")
+    query: Optional[str] = Field(default=None, description="Optional search query")
+
+
 class DiagnoseResponse(BaseModel):
     """诊断响应"""
     task_id: str = Field(..., description="任务ID")
@@ -1083,6 +1099,217 @@ async def general_chat_v2(request: GeneralChatRequest):
 
 
 
+
+
+from collections import defaultdict
+from datetime import datetime as dt, timedelta
+from typing import Dict as TypeDict
+
+
+_trace_rate_limiter: TypeDict[str, list] = defaultdict(list)
+_TRACE_RATE_LIMIT_WINDOW = 60
+_TRACE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("TRACE_QUERY_RATE_LIMIT_PER_MINUTE", "30"))
+_TRACE_ID_PATTERN = re.compile(r"^trace_\d{8}T\d{6}Z_[0-9a-f]{8}$")
+
+
+def check_trace_rate_limit(client_id: str) -> bool:
+    now = dt.now()
+    _trace_rate_limiter[client_id] = [
+        timestamp for timestamp in _trace_rate_limiter[client_id]
+        if now - timestamp < timedelta(seconds=_TRACE_RATE_LIMIT_WINDOW)
+    ]
+
+    if len(_trace_rate_limiter[client_id]) >= _TRACE_RATE_LIMIT_MAX_REQUESTS:
+        return False
+
+    _trace_rate_limiter[client_id].append(now)
+    return True
+
+
+async def require_trace_access() -> None:
+    """Placeholder hook for future tracing authorization."""
+    return None
+
+
+def _validate_trace_id(trace_id: str) -> None:
+    if not _TRACE_ID_PATTERN.match(trace_id):
+        raise HTTPException(status_code=400, detail="无效的 trace_id")
+
+
+def _get_trace_database():
+    if not hasattr(session_manager, "db") or not session_manager.db:
+        raise HTTPException(status_code=500, detail="数据库不可用")
+    return session_manager.db
+
+
+def _render_trace_export_csv(items: List[Dict[str, Any]]) -> str:
+    columns = [
+        "trace_id",
+        "session_id",
+        "request_type",
+        "status",
+        "user_input",
+        "created_at",
+        "completed_at",
+        "total_time",
+    ]
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    for item in items:
+        writer.writerow({column: "" if item.get(column) is None else item.get(column) for column in columns})
+    return output.getvalue()
+
+
+@app.get("/api/v1/traces")
+async def list_traces_route(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    session_id: Optional[str] = None,
+    request_type: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    query: Optional[str] = None,
+):
+    await require_trace_access()
+
+    if page < 1 or page_size < 1:
+        raise HTTPException(status_code=400, detail="invalid pagination parameters")
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_trace_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="too many requests")
+
+    started = time.perf_counter()
+    try:
+        db = _get_trace_database()
+        result = await db.list_traces(
+            page=page,
+            page_size=page_size,
+            session_id=session_id,
+            request_type=request_type,
+            start_time=start_time,
+            end_time=end_time,
+            query=query,
+        )
+        record_trace_query((time.perf_counter() - started) * 1000, success=True)
+        return result
+    except HTTPException:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise
+    except Exception as e:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise HTTPException(status_code=500, detail=f"trace query failed: {str(e)}")
+
+
+@app.get("/api/v1/traces/stats")
+async def get_trace_stats_route(request: Request):
+    await require_trace_access()
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_trace_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="too many requests")
+
+    started = time.perf_counter()
+    try:
+        db = _get_trace_database()
+        result = await db.get_trace_stats()
+        result["runtime_metrics"] = get_trace_runtime_metrics(db)
+        record_trace_query((time.perf_counter() - started) * 1000, success=True)
+        return result
+    except HTTPException:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise
+    except Exception as e:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise HTTPException(status_code=500, detail=f"trace stats failed: {str(e)}")
+
+
+@app.post("/api/v1/traces/export")
+async def export_traces_route(payload: TraceExportRequest, request: Request):
+    await require_trace_access()
+
+    if payload.page_size > 1000:
+        raise HTTPException(status_code=400, detail="export limit is 1000 rows")
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_trace_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="too many requests")
+
+    started = time.perf_counter()
+    try:
+        db = _get_trace_database()
+        items = await db.export_traces(
+            page=payload.page,
+            page_size=payload.page_size,
+            session_id=payload.session_id,
+            request_type=payload.request_type,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            query=payload.query,
+        )
+        csv_content = _render_trace_export_csv(items)
+        filename = f"trace_export_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        record_trace_query((time.perf_counter() - started) * 1000, success=True)
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise
+    except Exception as e:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise HTTPException(status_code=500, detail=f"trace export failed: {str(e)}")
+
+
+@app.get("/api/v1/traces/{trace_id}")
+async def get_trace_detail_route(trace_id: str, request: Request):
+    await require_trace_access()
+    _validate_trace_id(trace_id)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_trace_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="too many requests")
+
+    started = time.perf_counter()
+    try:
+        db = _get_trace_database()
+        detail = await db.get_trace_detail(trace_id)
+        if not detail:
+            raise HTTPException(status_code=404, detail=f"trace not found: {trace_id}")
+        record_trace_query((time.perf_counter() - started) * 1000, success=True)
+        return detail
+    except HTTPException:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise
+    except Exception as e:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise HTTPException(status_code=500, detail=f"trace detail failed: {str(e)}")
+
+
+@app.get("/api/v1/sessions/{session_id}/traces")
+async def list_session_traces_route(session_id: str, request: Request):
+    await require_trace_access()
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_trace_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="too many requests")
+
+    started = time.perf_counter()
+    try:
+        db = _get_trace_database()
+        result = await db.list_session_traces(session_id)
+        record_trace_query((time.perf_counter() - started) * 1000, success=True)
+        return result
+    except HTTPException:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise
+    except Exception as e:
+        record_trace_query((time.perf_counter() - started) * 1000, success=False)
+        raise HTTPException(status_code=500, detail=f"session trace query failed: {str(e)}")
 
 
 @app.get("/api/v1/sessions")

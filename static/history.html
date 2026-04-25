@@ -266,6 +266,92 @@
             }
         }
 
+        .session-traces-panel {
+            margin: 0 20px 20px;
+            border-radius: 14px;
+            background: rgba(248, 250, 252, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            overflow: hidden;
+        }
+
+        .session-traces-toggle {
+            width: 100%;
+            border: none;
+            background: transparent;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .session-traces-toggle:hover {
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .session-traces-meta {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .session-traces-body {
+            padding: 0 16px 16px;
+            border-top: 1px solid rgba(148, 163, 184, 0.15);
+        }
+
+        .session-traces-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .session-trace-item {
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: white;
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .session-trace-item:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .session-trace-top,
+        .session-trace-meta-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .session-trace-id {
+            font-family: monospace;
+            font-size: 12px;
+            color: #1d4ed8;
+        }
+
+        .session-trace-meta-row {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .session-trace-empty {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 10px;
+            background: white;
+            color: #64748b;
+            text-align: center;
+        }
+
         /* Responsive design */
         @media (max-width: 768px) {
             .history-container {
@@ -594,6 +680,16 @@
                 <h2 id="session-title">会话详情</h2>
                 <p id="session-info"></p>
             </div>
+
+            <section class="session-traces-panel" id="session-traces-panel" hidden>
+                <button class="session-traces-toggle" id="session-traces-toggle" type="button">
+                    <span>关联追踪记录</span>
+                    <span class="session-traces-meta" id="session-traces-meta">0 条</span>
+                </button>
+                <div class="session-traces-body" id="session-traces-body">
+                    <div class="session-traces-list" id="session-traces-list"></div>
+                </div>
+            </section>
 
             <div class="messages-content" id="messages-content">
                 <div class="empty-state">

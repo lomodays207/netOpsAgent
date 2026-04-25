@@ -8,14 +8,19 @@
 4. 报告生成
 """
 import asyncio
+from datetime import datetime, timezone
+
+import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from src.agent.nlu import NLU
-from src.agent.llm_agent import LLMAgent
+from src.agent.llm_agent import LLMAgent, NeedUserInputException
 from src.integrations.llm_client import LLMClient
 from src.integrations.automation_platform_client import AutomationPlatformClient
+from src.models.report import DiagnosticReport
+from src.models.task import DiagnosticTask, FaultType, Protocol
 
 print("=" * 70)
 print("简化LLM Agent测试")
@@ -83,6 +88,159 @@ async def main():
         print("FAIL - 根因分析不符合预期")
         print(f"  期望关键词: {expected_keywords}")
         return False
+
+class RecordingTraceRecorder:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def start_trace(self, **kwargs):
+        self.calls.append(("start_trace", kwargs))
+        return "trace_test_1"
+
+    def add_reasoning_step(self, **kwargs):
+        self.calls.append(("add_reasoning_step", kwargs))
+
+    def start_tool_call(self, **kwargs):
+        self.calls.append(("start_tool_call", kwargs))
+        return "tool_test_1"
+
+    def complete_tool_call(self, **kwargs):
+        self.calls.append(("complete_tool_call", kwargs))
+
+    def complete_trace(self, **kwargs):
+        self.calls.append(("complete_trace", kwargs))
+
+    def fail_trace(self, **kwargs):
+        self.calls.append(("fail_trace", kwargs))
+
+    def interrupt_trace(self, **kwargs):
+        self.calls.append(("interrupt_trace", kwargs))
+
+
+def _build_task() -> DiagnosticTask:
+    return DiagnosticTask(
+        task_id="task-1",
+        user_input="10.0.1.10 to 10.0.2.20 port 80 unreachable",
+        source="10.0.1.10",
+        target="10.0.2.20",
+        protocol=Protocol.TCP,
+        fault_type=FaultType.PORT_UNREACHABLE,
+        port=80,
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_records_trace_for_completed_diagnosis(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = RecordingTraceRecorder()
+    agent = LLMAgent(llm_client=object(), verbose=False, max_steps=3, trace_recorder=recorder)
+
+    decisions = [
+        {
+            "reasoning": "check the target port first",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "name": "check_port_alive",
+                    "arguments": {"host": "10.0.2.20", "port": 80},
+                }
+            ],
+            "conclude": False,
+        },
+        {
+            "reasoning": "the port is not listening on the target host",
+            "tool_calls": [],
+            "conclude": True,
+        },
+    ]
+
+    async def fake_decide(context, task):
+        return decisions.pop(0)
+
+    async def fake_execute(tool_call, task):
+        return {"success": True, "stdout": "closed", "execution_time": 1.25}
+
+    monkeypatch.setattr(agent, "_llm_decide_next_step", fake_decide)
+    monkeypatch.setattr(agent, "_execute_tool", fake_execute)
+
+    report = await agent.diagnose(_build_task())
+
+    assert report.root_cause == "the port is not listening on the target host"
+    assert [name for name, _ in recorder.calls] == [
+        "start_trace",
+        "add_reasoning_step",
+        "start_tool_call",
+        "complete_tool_call",
+        "add_reasoning_step",
+        "complete_trace",
+    ]
+    assert recorder.calls[0][1]["request_type"] == "diagnosis"
+    assert recorder.calls[-1][1]["final_answer"] == "the port is not listening on the target host"
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_reuses_trace_after_need_user_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = RecordingTraceRecorder()
+    agent = LLMAgent(llm_client=object(), verbose=False, max_steps=4, trace_recorder=recorder)
+    task = _build_task()
+
+    first_decisions = [
+        {
+            "reasoning": "need user confirmation before next step",
+            "tool_calls": [
+                {
+                    "id": "call-ask",
+                    "name": "ask_user",
+                    "arguments": {"question": "is there a firewall?"},
+                }
+            ],
+            "conclude": False,
+        }
+    ]
+    second_decisions = [
+        {
+            "reasoning": "the firewall denies the connection",
+            "tool_calls": [],
+            "conclude": True,
+        }
+    ]
+
+    async def fake_decide_first(context, task):
+        return first_decisions.pop(0)
+
+    async def fake_execute_ask(tool_call, task):
+        raise NeedUserInputException("is there a firewall?", agent.current_context)
+
+    monkeypatch.setattr(agent, "_llm_decide_next_step", fake_decide_first)
+    monkeypatch.setattr(agent, "_execute_tool", fake_execute_ask)
+
+    with pytest.raises(NeedUserInputException):
+        await agent.diagnose(task)
+
+    async def fake_decide_second(context, task):
+        return second_decisions.pop(0)
+
+    monkeypatch.setattr(agent, "_llm_decide_next_step", fake_decide_second)
+
+    report = await agent.continue_diagnose(task, agent.current_context, "yes", stop_event=None)
+
+    assert report.root_cause == "the firewall denies the connection"
+    assert [name for name, _ in recorder.calls].count("start_trace") == 1
+    assert [name for name, _ in recorder.calls].count("complete_trace") == 1
+    assert all(name != "fail_trace" for name, _ in recorder.calls)
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_interrupts_trace_when_stop_event_is_set() -> None:
+    recorder = RecordingTraceRecorder()
+    agent = LLMAgent(llm_client=object(), verbose=False, max_steps=2, trace_recorder=recorder)
+    stop_event = asyncio.Event()
+    stop_event.set()
+
+    report = await agent.diagnose(_build_task(), stop_event=stop_event)
+
+    assert isinstance(report, DiagnosticReport)
+    assert [name for name, _ in recorder.calls] == ["start_trace", "interrupt_trace"]
+
 
 if __name__ == "__main__":
     try:

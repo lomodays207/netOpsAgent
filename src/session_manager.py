@@ -7,6 +7,8 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
+from .tracing.cleanup import get_trace_retention_days, is_tracing_enabled, start_trace_cleanup_loop
+
 
 @dataclass
 class DiagnosisSession:
@@ -131,6 +133,7 @@ class SQLiteSessionManager(SessionManager):
         self.db_path = db_path
         self.db = None
         self._initialized = False
+        self._trace_cleanup_task = None
 
     async def initialize(self):
         """初始化数据库"""
@@ -145,6 +148,20 @@ class SQLiteSessionManager(SessionManager):
 
     def create_session(self, session_id: str, task: Any, llm_client: Any, agent: Any) -> DiagnosisSession:
         """创建新会话并持久化"""
+    async def start_cleanup(self):
+        """Start session cleanup and optional trace cleanup loops."""
+        await super().start_cleanup()
+
+        if self.db is None or self._trace_cleanup_task is not None or not is_tracing_enabled():
+            return
+
+        self._trace_cleanup_task = start_trace_cleanup_loop(
+            self.db,
+            retention_days=get_trace_retention_days(),
+        )
+
+    def create_session(self, session_id: str, task: Any, llm_client: Any, agent: Any) -> DiagnosisSession:
+        """鍒涘缓鏂颁細璇濆苟鎸佷箙鍖?"""
         from .db import serialize_task, serialize_context, extract_llm_config
 
         # 创建会话对象
