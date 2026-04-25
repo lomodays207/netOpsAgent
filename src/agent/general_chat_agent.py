@@ -7,14 +7,19 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from ..integrations.llm_client import LLMClient
+from ..integrations.network_tools import NetworkTools
+from .query_intents import detect_host_port_status_query
 
 
-GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE = """你是一个网络运维助手，负责两类任务：
+GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE = """你是一个网络运维助手，负责以下任务：
 
 1. 回答一般网络运维与故障诊断问题
 2. 查询应用系统之间的网络访问关系
 
 {rag_instruction}
+
+当用户询问某个主机 IP 上的 TCP 端口是否正在监听、是否存活、是否正常时，必须先调用 check_port_alive 工具再回答。
+示例：用户问“请帮我检查 2.7.8.6主机上的 8008 是否正常监听。”时，应调用 check_port_alive(host="2.7.8.6", port=8008)。
 
 当用户询问访问关系时，你必须优先调用 query_access_relations 工具，禁止凭记忆、猜测、示例数据或常识直接编造访问关系。
 
@@ -106,6 +111,12 @@ class QueryAccessRelationsInput(BaseModel):
     )
 
 
+class CheckPortAliveInput(BaseModel):
+    host: str = Field(description="Target host IP address, for example 2.7.8.6")
+    port: int = Field(description="TCP port to check, from 1 to 65535")
+    timeout: int = Field(default=30, description="Command timeout in seconds")
+
+
 class GeneralChatToolAgent:
     """Lightweight tool-calling agent for general chat."""
 
@@ -125,6 +136,7 @@ class GeneralChatToolAgent:
         self.max_tool_rounds = max_tool_rounds
         self.trace_recorder = trace_recorder
         self._active_trace_id: Optional[str] = None
+        self.network_tools = NetworkTools(use_router=True)
         self.tools = self._create_tools()
         self._tools_by_name = {tool.name: tool for tool in self.tools}
 
@@ -230,7 +242,31 @@ class GeneralChatToolAgent:
             args_schema=QueryAccessRelationsInput,
         )
 
-        return [query_tool]
+        async def check_port_alive_func(
+            host: str,
+            port: int,
+            timeout: int = 30
+        ) -> Dict[str, Any]:
+            result = await self.network_tools.check_port_alive(host, port, timeout)
+            if "data" not in result:
+                if result.get("success"):
+                    state = "listening" if result.get("port_alive") else "not listening"
+                    result["data"] = f"{host}:{port} is {state}"
+                else:
+                    result["data"] = result.get("stderr") or f"Failed to check {host}:{port}"
+            return result
+
+        port_check_tool = StructuredTool.from_function(
+            coroutine=check_port_alive_func,
+            name="check_port_alive",
+            description=(
+                "Check whether a TCP port is listening on a specified host IP. "
+                "Use this when the user asks whether a host port is listening, alive, or normal."
+            ),
+            args_schema=CheckPortAliveInput,
+        )
+
+        return [query_tool, port_check_tool]
 
     def _build_tool_summary(self, query: Dict[str, Any], total: int) -> str:
         subject = query.get("system_code") or query.get("system_name") or "未指定系统"
@@ -256,6 +292,24 @@ class GeneralChatToolAgent:
         system_prompt: str
     ) -> List[Any]:
         messages: List[Any] = [SystemMessage(content=system_prompt)]
+        latest_user_content = None
+        for msg in reversed(session_messages):
+            if msg.get("role") == "user":
+                latest_user_content = self._stringify_content(msg.get("content", ""))
+                break
+
+        host_port_status_query = detect_host_port_status_query(latest_user_content or "")
+        if host_port_status_query:
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "当前用户请求已识别为主机端口状态查询。"
+                        f"目标主机: {host_port_status_query['host']}。"
+                        f"目标端口: {host_port_status_query['port']}。"
+                        "你必须先调用 check_port_alive 工具，再基于工具结果回答。"
+                    )
+                )
+            )
 
         for msg in session_messages:
             metadata = msg.get("metadata") or {}
@@ -373,6 +427,7 @@ class GeneralChatToolAgent:
                         tool_name=tool_name,
                         arguments=arguments,
                     )
+
                 if tool is None:
                     result = {
                         "success": False,

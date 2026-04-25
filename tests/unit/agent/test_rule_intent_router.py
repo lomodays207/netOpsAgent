@@ -54,6 +54,18 @@ def test_classify_ambiguous_issue_as_soft_clarify():
     assert "源主机" in result.clarify_message
 
 
+def test_classify_single_host_port_listening_check_as_hard_general_chat():
+    router = RuleIntentRouter()
+
+    result = router.classify("请帮我检查 2.7.8.6主机上的 8008 是否正常监听。")
+
+    assert result.route == "general_chat"
+    assert result.certainty == "hard"
+    assert result.reason == "host_port_listening_check"
+    assert result.signals["has_ip"] is True
+    assert result.signals["is_port_listening_check"] is True
+
+
 def test_classify_waiting_user_session_as_hard_continue():
     router = RuleIntentRouter()
     session = make_session(status="waiting_user", source="10.0.1.10", target="10.0.2.20")

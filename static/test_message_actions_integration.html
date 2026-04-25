@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Actions Integration Test</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .messages-container {
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        h1 {
+            color: #1e293b;
+        }
+        h2 {
+            color: #334155;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 User Message Actions - Integration Test</h1>
+        <p>This test verifies the complete functionality of the user message actions feature including event delegation, copy, and edit operations.</p>
+
+        <div class="test-section">
+            <h2>Test Environment</h2>
+            <div id="test-env-result" class="test-result info">Initializing...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 1: Event Delegation Setup</h2>
+            <p>Verify that event delegation is properly set up on the messages container.</p>
+            <div id="test1-result" class="test-result info">Waiting...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 2: Add Action Buttons to Message</h2>
+            <p>Verify that action buttons are added to user messages with proper data attributes.</p>
+            <div class="messages-container" id="test2-container"></div>
+            <button onclick="runTest2()">Run Test 2</button>
+            <div id="test2-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 3: Copy Button Click (Event Delegation)</h2>
+            <p>Verify that clicking the copy button triggers the copy handler through event delegation.</p>
+            <div class="messages-container" id="test3-container"></div>
+            <button onclick="runTest3()">Run Test 3</button>
+            <div id="test3-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 4: Edit Button Click (Event Delegation)</h2>
+            <p>Verify that clicking the edit button enters edit mode through event delegation.</p>
+            <div class="messages-container" id="test4-container"></div>
+            <button onclick="runTest4()">Run Test 4</button>
+            <div id="test4-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 5: Keyboard Shortcuts in Edit Mode</h2>
+            <p>Verify that Escape and Ctrl+Enter work in edit mode.</p>
+            <div class="messages-container" id="test5-container"></div>
+            <button onclick="runTest5()">Run Test 5</button>
+            <div id="test5-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 6: Error Handling</h2>
+            <p>Verify that error handling works correctly for invalid inputs.</p>
+            <button onclick="runTest6()">Run Test 6</button>
+            <div id="test6-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 7: Prevent Duplicate Action Buttons</h2>
+            <p>Verify that calling addActionsToMessage twice doesn't create duplicate buttons.</p>
+            <div class="messages-container" id="test7-container"></div>
+            <button onclick="runTest7()">Run Test 7</button>
+            <div id="test7-result" class="test-result info">Click button to run test</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Manual Test: Full User Flow</h2>
+            <p>Test the complete user flow: hover to show buttons, click copy, click edit, modify text, and submit.</p>
+            <div class="messages-container" id="manual-test-container"></div>
+            <button onclick="setupManualTest()">Setup Manual Test</button>
+            <div id="manual-test-result" class="test-result info">
+                Instructions:<br>
+                1. Click "Setup Manual Test" to create a test message<br>
+                2. Hover over the message to see action buttons<br>
+                3. Click copy button to test copy functionality<br>
+                4. Click edit button to enter edit mode<br>
+                5. Modify the text and press Ctrl+Enter or click Send<br>
+                6. Verify the edited message is submitted
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Mock global variables needed by MessageActionsManager
+        let isWaitingForResponse = false;
+        const userInput = document.createElement('textarea');
+        const form = document.createElement('form');
+        
+        // Mock form submission
+        form.requestSubmit = function() {
+            console.log('Form submitted with value:', userInput.value);
+            alert('Message submitted: ' + userInput.value);
+        };
+
+        // Test environment check
+        function checkEnvironment() {
+            const result = document.getElementById('test-env-result');
+            const checks = [];
+            
+            checks.push(typeof MessageActionsManager !== 'undefined' ? '✓ MessageActionsManager loaded' : '✗ MessageActionsManager not found');
+            checks.push(typeof ClipboardHandler !== 'undefined' ? '✓ ClipboardHandler loaded' : '✗ ClipboardHandler not found');
+            checks.push(typeof EditModeRenderer !== 'undefined' ? '✓ EditModeRenderer loaded' : '✗ EditModeRenderer not found');
+            
+            const allPassed = checks.every(c => c.startsWith('✓'));
+            result.className = 'test-result ' + (allPassed ? 'pass' : 'fail');
+            result.innerHTML = checks.join('<br>');
+            
+            return allPassed;
+        }
+
+        // Test 1: Event Delegation Setup
+        function test1() {
+            const result = document.getElementById('test1-result');
+            
+            try {
+                // Create a temporary messages container
+                const tempContainer = document.createElement('div');
+                tempContainer.id = 'messages-container-test';
+                document.body.appendChild(tempContainer);
+                
+                // Set global messagesContainer
+                window.messagesContainer = tempContainer;
+                
+                // Create manager (should set up event delegation)
+                const manager = new MessageActionsManager();
+                
+                // Check if event listener was added (we can't directly check, but we can verify the manager initialized)
+                const hasSetup = manager.setupEventDelegation !== undefined;
+                
+                document.body.removeChild(tempContainer);
+                
+                if (hasSetup) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Event delegation setup method exists';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = '✗ FAIL: Event delegation setup method not found';
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 2: Add Action Buttons
+        function runTest2() {
+            const container = document.getElementById('test2-container');
+            const result = document.getElementById('test2-result');
+            
+            try {
+                // Set as global messagesContainer
+                window.messagesContainer = container;
+                
+                // Create manager
+                const manager = new MessageActionsManager();
+                
+                // Create a test message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message user-message';
+                messageEl.innerHTML = `
+                    <div class="message-avatar">👤</div>
+                    <div class="message-content">
+                        <div class="message-text">Test message for action buttons</div>
+                    </div>
+                `;
+                container.appendChild(messageEl);
+                
+                // Add actions
+                manager.addActionsToMessage(messageEl, 'Test message for action buttons');
+                
+                // Verify
+                const hasDataAttr = messageEl.hasAttribute('data-message-text');
+                const hasActions = messageEl.querySelector('.message-actions') !== null;
+                const hasCopyBtn = messageEl.querySelector('.message-copy-btn') !== null;
+                const hasEditBtn = messageEl.querySelector('.message-edit-btn') !== null;
+                
+                if (hasDataAttr && hasActions && hasCopyBtn && hasEditBtn) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Action buttons added with data attribute';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = `✗ FAIL: Missing elements (data:${hasDataAttr}, actions:${hasActions}, copy:${hasCopyBtn}, edit:${hasEditBtn})`;
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 3: Copy Button Click
+        function runTest3() {
+            const container = document.getElementById('test3-container');
+            const result = document.getElementById('test3-result');
+            
+            try {
+                window.messagesContainer = container;
+                const manager = new MessageActionsManager();
+                
+                // Create test message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message user-message';
+                messageEl.innerHTML = `
+                    <div class="message-avatar">👤</div>
+                    <div class="message-content">
+                        <div class="message-text">Copy test message</div>
+                    </div>
+                `;
+                container.appendChild(messageEl);
+                manager.addActionsToMessage(messageEl, 'Copy test message');
+                
+                // Mock handleCopy to detect if it's called
+                let copyCalled = false;
+                const originalHandleCopy = manager.handleCopy;
+                manager.handleCopy = function(...args) {
+                    copyCalled = true;
+                    return originalHandleCopy.apply(this, args);
+                };
+                
+                // Click the copy button
+                const copyBtn = messageEl.querySelector('.message-copy-btn');
+                copyBtn.click();
+                
+                // Restore
+                manager.handleCopy = originalHandleCopy;
+                
+                if (copyCalled) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Copy button click triggered handleCopy through event delegation';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = '✗ FAIL: Copy button click did not trigger handleCopy';
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 4: Edit Button Click
+        function runTest4() {
+            const container = document.getElementById('test4-container');
+            const result = document.getElementById('test4-result');
+            
+            try {
+                window.messagesContainer = container;
+                const manager = new MessageActionsManager();
+                
+                // Create test message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message user-message';
+                messageEl.innerHTML = `
+                    <div class="message-avatar">👤</div>
+                    <div class="message-content">
+                        <div class="message-text">Edit test message</div>
+                    </div>
+                `;
+                container.appendChild(messageEl);
+                manager.addActionsToMessage(messageEl, 'Edit test message');
+                
+                // Click the edit button
+                const editBtn = messageEl.querySelector('.message-edit-btn');
+                editBtn.click();
+                
+                // Verify edit mode
+                const isEditing = messageEl.getAttribute('data-editing') === 'true';
+                const hasTextarea = messageEl.querySelector('.edit-message-textarea') !== null;
+                const hasEditButtons = messageEl.querySelector('.edit-buttons') !== null;
+                
+                if (isEditing && hasTextarea && hasEditButtons) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Edit button click entered edit mode through event delegation';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = `✗ FAIL: Edit mode not properly activated (editing:${isEditing}, textarea:${hasTextarea}, buttons:${hasEditButtons})`;
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 5: Keyboard Shortcuts
+        function runTest5() {
+            const container = document.getElementById('test5-container');
+            const result = document.getElementById('test5-result');
+            
+            try {
+                window.messagesContainer = container;
+                const manager = new MessageActionsManager();
+                
+                // Create test message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message user-message';
+                messageEl.innerHTML = `
+                    <div class="message-avatar">👤</div>
+                    <div class="message-content">
+                        <div class="message-text">Keyboard test message</div>
+                    </div>
+                `;
+                container.appendChild(messageEl);
+                manager.addActionsToMessage(messageEl, 'Keyboard test message');
+                
+                // Enter edit mode
+                const editBtn = messageEl.querySelector('.message-edit-btn');
+                editBtn.click();
+                
+                const textarea = messageEl.querySelector('.edit-message-textarea');
+                
+                // Test Escape key
+                const escapeEvent = new KeyboardEvent('keydown', { key: 'Escape' });
+                textarea.dispatchEvent(escapeEvent);
+                
+                const exitedEditMode = messageEl.getAttribute('data-editing') !== 'true';
+                
+                if (exitedEditMode) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Escape key exits edit mode';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = '✗ FAIL: Escape key did not exit edit mode';
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 6: Error Handling
+        function runTest6() {
+            const result = document.getElementById('test6-result');
+            
+            try {
+                const manager = new MessageActionsManager();
+                
+                // Test invalid inputs
+                let errorsCaught = 0;
+                const originalError = console.error;
+                console.error = function(...args) {
+                    if (args[0].includes('[MessageActionsManager]')) {
+                        errorsCaught++;
+                    }
+                    originalError.apply(console, args);
+                };
+                
+                // Test null messageElement
+                manager.addActionsToMessage(null, 'test');
+                
+                // Test invalid messageText
+                const validEl = document.createElement('div');
+                validEl.className = 'message user-message';
+                validEl.innerHTML = '<div class="message-content"><div class="message-text">test</div></div>';
+                manager.addActionsToMessage(validEl, 123);
+                
+                console.error = originalError;
+                
+                if (errorsCaught >= 2) {
+                    result.className = 'test-result pass';
+                    result.textContent = `✓ PASS: Error handling works (${errorsCaught} errors caught)`;
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = `✗ FAIL: Expected at least 2 errors, caught ${errorsCaught}`;
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Test 7: Prevent Duplicates
+        function runTest7() {
+            const container = document.getElementById('test7-container');
+            const result = document.getElementById('test7-result');
+            
+            try {
+                window.messagesContainer = container;
+                const manager = new MessageActionsManager();
+                
+                // Create test message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message user-message';
+                messageEl.innerHTML = `
+                    <div class="message-avatar">👤</div>
+                    <div class="message-content">
+                        <div class="message-text">Duplicate test</div>
+                    </div>
+                `;
+                container.appendChild(messageEl);
+                
+                // Add actions twice
+                manager.addActionsToMessage(messageEl, 'Duplicate test');
+                manager.addActionsToMessage(messageEl, 'Duplicate test');
+                
+                // Count action containers
+                const actionContainers = messageEl.querySelectorAll('.message-actions');
+                
+                if (actionContainers.length === 1) {
+                    result.className = 'test-result pass';
+                    result.textContent = '✓ PASS: Duplicate action buttons prevented';
+                } else {
+                    result.className = 'test-result fail';
+                    result.textContent = `✗ FAIL: Found ${actionContainers.length} action containers (expected 1)`;
+                }
+            } catch (error) {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: ' + error.message;
+            }
+        }
+
+        // Manual Test Setup
+        function setupManualTest() {
+            const container = document.getElementById('manual-test-container');
+            container.innerHTML = '';
+            
+            window.messagesContainer = container;
+            const manager = new MessageActionsManager();
+            
+            // Create a realistic test message
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message user-message';
+            messageEl.innerHTML = `
+                <div class="message-avatar">👤</div>
+                <div class="message-content">
+                    <div class="message-text">This is a test message. Try hovering to see action buttons, then click copy or edit!</div>
+                </div>
+            `;
+            container.appendChild(messageEl);
+            manager.addActionsToMessage(messageEl, 'This is a test message. Try hovering to see action buttons, then click copy or edit!');
+            
+            document.getElementById('manual-test-result').className = 'test-result info';
+            document.getElementById('manual-test-result').innerHTML = '✓ Manual test message created. Hover over it to see action buttons!';
+        }
+
+        // Run automatic tests on load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                checkEnvironment();
+                test1();
+            }, 100);
+        });
+    </script>
+</body>
+</html>

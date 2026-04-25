@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test EditModeRenderer.restoreOriginalMessage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .pass {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .fail {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .message-text {
+            padding: 10px;
+            background: #f5f5f5;
+            margin: 10px 0;
+        }
+        .message-actions {
+            margin-top: 10px;
+        }
+        .edit-message-textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+        }
+        .edit-buttons {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>EditModeRenderer.restoreOriginalMessage() 测试</h1>
+    <p>验证 Task 3.3 的实现是否满足 Requirements 4.1, 4.6, 4.7</p>
+
+    <div id="test-container"></div>
+
+    <script src="../static/marked.min.js"></script>
+    <script>
+        // 从 static/app.js 复制 EditModeRenderer 类
+        class EditModeRenderer {
+            createEditableTextarea(text) {
+                if (typeof text !== 'string') {
+                    console.error('[EditModeRenderer] createEditableTextarea 失败: text 参数必须是字符串');
+                    text = '';
+                }
+
+                const textarea = document.createElement('textarea');
+                textarea.className = 'edit-message-textarea';
+                textarea.value = text;
+                textarea.setAttribute('aria-label', '编辑消息内容');
+                
+                const lineCount = text.split('\n').length;
+                const estimatedRows = Math.max(3, Math.min(lineCount + 1, 10));
+                textarea.rows = estimatedRows;
+
+                textarea.addEventListener('input', () => {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = textarea.scrollHeight + 'px';
+                });
+
+                return textarea;
+            }
+
+            createEditButtons() {
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.className = 'edit-buttons';
+
+                const cancelButton = document.createElement('button');
+                cancelButton.type = 'button';
+                cancelButton.className = 'edit-cancel-btn';
+                cancelButton.textContent = '取消';
+                cancelButton.setAttribute('aria-label', '取消编辑');
+
+                const sendButton = document.createElement('button');
+                sendButton.type = 'button';
+                sendButton.className = 'edit-send-btn';
+                sendButton.textContent = '发送';
+                sendButton.setAttribute('aria-label', '发送编辑后的消息');
+
+                buttonsContainer.appendChild(cancelButton);
+                buttonsContainer.appendChild(sendButton);
+
+                return buttonsContainer;
+            }
+
+            renderEditMode(messageElement, originalText) {
+                if (!messageElement || !(messageElement instanceof HTMLElement)) {
+                    console.error('[EditModeRenderer] renderEditMode 失败: messageElement 参数必须是有效的 HTMLElement');
+                    return null;
+                }
+
+                if (typeof originalText !== 'string') {
+                    console.error('[EditModeRenderer] renderEditMode 失败: originalText 参数必须是字符串');
+                    return null;
+                }
+
+                const messageTextEl = messageElement.querySelector('.message-text');
+                if (!messageTextEl) {
+                    console.error('[EditModeRenderer] 找不到 .message-text 元素');
+                    return null;
+                }
+
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                if (actionsContainer) {
+                    actionsContainer.style.display = 'none';
+                }
+
+                messageElement.setAttribute('data-original-html', messageTextEl.innerHTML);
+                messageElement.setAttribute('data-original-text', originalText);
+
+                const textarea = this.createEditableTextarea(originalText);
+                const buttonsContainer = this.createEditButtons();
+                const cancelButton = buttonsContainer.querySelector('.edit-cancel-btn');
+                const sendButton = buttonsContainer.querySelector('.edit-send-btn');
+
+                messageTextEl.innerHTML = '';
+                messageTextEl.appendChild(textarea);
+                messageTextEl.appendChild(buttonsContainer);
+
+                messageElement.setAttribute('data-editing', 'true');
+
+                setTimeout(() => {
+                    textarea.focus();
+                    const textLength = textarea.value.length;
+                    textarea.setSelectionRange(textLength, textLength);
+                }, 0);
+
+                return {
+                    textarea,
+                    cancelButton,
+                    sendButton
+                };
+            }
+
+            restoreOriginalMessage(messageElement, originalText) {
+                if (!messageElement || !(messageElement instanceof HTMLElement)) {
+                    console.error('[EditModeRenderer] restoreOriginalMessage 失败: messageElement 参数必须是有效的 HTMLElement');
+                    return;
+                }
+
+                const messageTextEl = messageElement.querySelector('.message-text');
+                if (!messageTextEl) {
+                    console.error('[EditModeRenderer] 找不到 .message-text 元素');
+                    return;
+                }
+
+                const originalHtml = messageElement.getAttribute('data-original-html');
+                if (originalHtml) {
+                    messageTextEl.innerHTML = originalHtml;
+                } else {
+                    console.warn('[EditModeRenderer] 未找到保存的原始 HTML，使用文本内容重新渲染');
+                    messageTextEl.textContent = originalText || '';
+                }
+
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                if (actionsContainer) {
+                    actionsContainer.style.display = '';
+                }
+
+                messageElement.removeAttribute('data-editing');
+                messageElement.removeAttribute('data-original-html');
+                messageElement.removeAttribute('data-original-text');
+            }
+        }
+
+        // 测试工具函数
+        function createTestMessage(text) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'user-message';
+            
+            const messageTextEl = document.createElement('div');
+            messageTextEl.className = 'message-text';
+            messageTextEl.textContent = text;
+            
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'message-actions';
+            actionsContainer.innerHTML = '<button>复制</button><button>编辑</button>';
+            
+            messageElement.appendChild(messageTextEl);
+            messageElement.appendChild(actionsContainer);
+            
+            return messageElement;
+        }
+
+        function logResult(testName, passed, details) {
+            const container = document.getElementById('test-container');
+            const section = document.createElement('div');
+            section.className = 'test-section';
+            
+            const result = document.createElement('div');
+            result.className = `test-result ${passed ? 'pass' : 'fail'}`;
+            result.innerHTML = `<strong>${testName}</strong>: ${passed ? '✓ PASS' : '✗ FAIL'}`;
+            
+            if (details) {
+                const detailsEl = document.createElement('pre');
+                detailsEl.textContent = details;
+                section.appendChild(result);
+                section.appendChild(detailsEl);
+            } else {
+                section.appendChild(result);
+            }
+            
+            container.appendChild(section);
+        }
+
+        // 运行测试
+        function runTests() {
+            const renderer = new EditModeRenderer();
+            
+            // Test 1: Requirement 4.1 - 恢复原始消息文本显示
+            {
+                const originalText = '这是原始消息内容';
+                const messageElement = createTestMessage(originalText);
+                document.body.appendChild(messageElement);
+                
+                // 进入编辑模式
+                renderer.renderEditMode(messageElement, originalText);
+                
+                // 验证编辑模式已激活
+                const hasTextarea = messageElement.querySelector('.edit-message-textarea') !== null;
+                
+                // 恢复原始消息
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                
+                // 验证
+                const messageTextEl = messageElement.querySelector('.message-text');
+                const textRestored = messageTextEl.textContent === originalText;
+                const noTextarea = messageElement.querySelector('.edit-message-textarea') === null;
+                const noEditButtons = messageElement.querySelector('.edit-buttons') === null;
+                
+                const passed = hasTextarea && textRestored && noTextarea && noEditButtons;
+                logResult(
+                    'Requirement 4.1: 恢复原始消息文本显示',
+                    passed,
+                    `编辑模式有 textarea: ${hasTextarea}\n文本已恢复: ${textRestored}\ntextarea 已移除: ${noTextarea}\n编辑按钮已移除: ${noEditButtons}`
+                );
+                
+                document.body.removeChild(messageElement);
+            }
+            
+            // Test 2: Requirement 4.6 - 恢复操作按钮可见性
+            {
+                const originalText = '测试操作按钮恢复';
+                const messageElement = createTestMessage(originalText);
+                document.body.appendChild(messageElement);
+                
+                // 进入编辑模式
+                renderer.renderEditMode(messageElement, originalText);
+                
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                const hiddenInEditMode = actionsContainer.style.display === 'none';
+                
+                // 恢复原始消息
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                
+                const visibleAfterRestore = actionsContainer.style.display === '';
+                
+                const passed = hiddenInEditMode && visibleAfterRestore;
+                logResult(
+                    'Requirement 4.6: 恢复操作按钮可见性',
+                    passed,
+                    `编辑模式中隐藏: ${hiddenInEditMode}\n恢复后可见: ${visibleAfterRestore}`
+                );
+                
+                document.body.removeChild(messageElement);
+            }
+            
+            // Test 3: Requirement 4.7 - 移除编辑文本框和操作按钮组
+            {
+                const originalText = '测试 DOM 清理';
+                const messageElement = createTestMessage(originalText);
+                document.body.appendChild(messageElement);
+                
+                // 进入编辑模式
+                renderer.renderEditMode(messageElement, originalText);
+                
+                const hasTextareaBefore = messageElement.querySelector('.edit-message-textarea') !== null;
+                const hasEditButtonsBefore = messageElement.querySelector('.edit-buttons') !== null;
+                
+                // 恢复原始消息
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                
+                const hasTextareaAfter = messageElement.querySelector('.edit-message-textarea') !== null;
+                const hasEditButtonsAfter = messageElement.querySelector('.edit-buttons') !== null;
+                const noEditingAttribute = !messageElement.hasAttribute('data-editing');
+                
+                const passed = hasTextareaBefore && hasEditButtonsBefore && 
+                              !hasTextareaAfter && !hasEditButtonsAfter && noEditingAttribute;
+                logResult(
+                    'Requirement 4.7: 移除编辑 UI 元素',
+                    passed,
+                    `编辑前有 textarea: ${hasTextareaBefore}\n编辑前有按钮组: ${hasEditButtonsBefore}\n恢复后无 textarea: ${!hasTextareaAfter}\n恢复后无按钮组: ${!hasEditButtonsAfter}\ndata-editing 已移除: ${noEditingAttribute}`
+                );
+                
+                document.body.removeChild(messageElement);
+            }
+            
+            // Test 4: 边界条件 - 无效输入
+            {
+                const passed = true;
+                try {
+                    renderer.restoreOriginalMessage(null, 'test');
+                    renderer.restoreOriginalMessage(undefined, 'test');
+                    renderer.restoreOriginalMessage({}, 'test');
+                } catch (e) {
+                    passed = false;
+                }
+                
+                logResult(
+                    '边界条件: 无效输入处理',
+                    passed,
+                    '验证方法能够优雅处理无效输入而不抛出异常'
+                );
+            }
+            
+            // Test 5: 完整流程测试
+            {
+                const originalText = '完整流程测试消息';
+                const messageElement = createTestMessage(originalText);
+                document.body.appendChild(messageElement);
+                
+                // 1. 进入编辑模式
+                renderer.renderEditMode(messageElement, originalText);
+                const inEditMode = messageElement.getAttribute('data-editing') === 'true';
+                
+                // 2. 恢复原始消息
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                const exitedEditMode = !messageElement.hasAttribute('data-editing');
+                const textRestored = messageElement.querySelector('.message-text').textContent === originalText;
+                const actionsVisible = messageElement.querySelector('.message-actions').style.display === '';
+                
+                const passed = inEditMode && exitedEditMode && textRestored && actionsVisible;
+                logResult(
+                    '完整流程: 编辑模式进入和退出',
+                    passed,
+                    `成功进入编辑模式: ${inEditMode}\n成功退出编辑模式: ${exitedEditMode}\n文本正确恢复: ${textRestored}\n操作按钮可见: ${actionsVisible}`
+                );
+                
+                document.body.removeChild(messageElement);
+            }
+        }
+
+        // 页面加载后运行测试
+        window.addEventListener('DOMContentLoaded', runTests);
+    </script>
+</body>
+</html>

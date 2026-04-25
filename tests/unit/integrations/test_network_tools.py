@@ -62,6 +62,27 @@ async def test_check_port_alive_reports_not_alive_when_grep_finds_no_listener():
     assert result["exit_code"] == 1
 
 
+@pytest.mark.asyncio
+async def test_check_port_alive_ignores_output_for_different_port():
+    client = RecordingClient(
+        CommandResult(
+            command="ss -tlnp | grep ':8008'",
+            host="2.7.8.6",
+            success=True,
+            stdout='tcp LISTEN 0 128 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=1234,fd=6))',
+            stderr="",
+            exit_code=0,
+            execution_time=0.09,
+        )
+    )
+    tools = NetworkTools(default_client=client, use_router=False)
+
+    result = await tools.check_port_alive("2.7.8.6", 8008, timeout=5)
+
+    assert result["success"] is True
+    assert result["port_alive"] is False
+
+
 def test_llm_agent_registers_check_port_alive_tool():
     from src.agent.llm_agent import LLMAgent
 

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test addActionsToMessage - Task 4.2</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #444;
+            border-radius: 5px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .pass {
+            background: #2d5016;
+            border: 1px solid #4caf50;
+        }
+        .fail {
+            background: #5d1616;
+            border: 1px solid #f44336;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+        }
+        .message-content {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .message-text {
+            margin-bottom: 5px;
+        }
+        .message-actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        .message-action-btn {
+            padding: 5px 10px;
+            border: 1px solid #666;
+            background: #333;
+            color: white;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .message-action-btn:hover {
+            background: #444;
+        }
+    </style>
+</head>
+<body>
+    <h1>Task 4.2: 实现添加操作按钮逻辑 - 测试</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: 检查是否已存在操作按钮容器，防止重复添加</h2>
+        <div id="test1-message" class="message user-message">
+            <div class="message-content">
+                <div class="message-text">测试消息 1</div>
+            </div>
+        </div>
+        <div id="test1-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: 将操作按钮容器添加到消息内容区域</h2>
+        <div id="test2-message" class="message user-message">
+            <div class="message-content">
+                <div class="message-text">测试消息 2</div>
+            </div>
+        </div>
+        <div id="test2-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: 绑定复制和编辑按钮的事件处理器</h2>
+        <div id="test3-message" class="message user-message">
+            <div class="message-content">
+                <div class="message-text">测试消息 3</div>
+            </div>
+        </div>
+        <div id="test3-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: 验证输入参数（无效的 messageElement）</h2>
+        <div id="test4-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: 验证输入参数（无效的 messageText）</h2>
+        <div id="test5-message" class="message user-message">
+            <div class="message-content">
+                <div class="message-text">测试消息 5</div>
+            </div>
+        </div>
+        <div id="test5-result"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // 初始化 MessageActionsManager
+        const manager = new MessageActionsManager();
+
+        // Test 1: 防止重复添加
+        function test1() {
+            const messageEl = document.getElementById('test1-message');
+            const messageText = '测试消息 1';
+            
+            // 第一次添加
+            manager.addActionsToMessage(messageEl, messageText);
+            const firstActions = messageEl.querySelector('.message-actions');
+            
+            // 第二次添加（应该被阻止）
+            manager.addActionsToMessage(messageEl, messageText);
+            const allActions = messageEl.querySelectorAll('.message-actions');
+            
+            const result = document.getElementById('test1-result');
+            if (firstActions && allActions.length === 1) {
+                result.className = 'test-result pass';
+                result.textContent = '✓ PASS: 成功防止重复添加操作按钮';
+            } else {
+                result.className = 'test-result fail';
+                result.textContent = `✗ FAIL: 重复添加检测失败 (找到 ${allActions.length} 个容器)`;
+            }
+        }
+
+        // Test 2: 添加到消息内容区域
+        function test2() {
+            const messageEl = document.getElementById('test2-message');
+            const messageText = '测试消息 2';
+            
+            manager.addActionsToMessage(messageEl, messageText);
+            
+            const messageContent = messageEl.querySelector('.message-content');
+            const actionsContainer = messageContent.querySelector('.message-actions');
+            const copyBtn = actionsContainer?.querySelector('.message-copy-btn');
+            const editBtn = actionsContainer?.querySelector('.message-edit-btn');
+            
+            const result = document.getElementById('test2-result');
+            if (actionsContainer && copyBtn && editBtn) {
+                result.className = 'test-result pass';
+                result.textContent = '✓ PASS: 操作按钮容器已正确添加到消息内容区域';
+            } else {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: 操作按钮容器未正确添加';
+            }
+        }
+
+        // Test 3: 事件处理器绑定
+        function test3() {
+            const messageEl = document.getElementById('test3-message');
+            const messageText = '测试消息 3';
+            
+            manager.addActionsToMessage(messageEl, messageText);
+            
+            const copyBtn = messageEl.querySelector('.message-copy-btn');
+            const editBtn = messageEl.querySelector('.message-edit-btn');
+            
+            let copyClicked = false;
+            let editClicked = false;
+            
+            // 监听复制按钮点击（通过检查是否触发了 handleCopy）
+            const originalHandleCopy = manager.handleCopy;
+            manager.handleCopy = function(...args) {
+                copyClicked = true;
+                return originalHandleCopy.apply(this, args);
+            };
+            
+            // 监听编辑按钮点击（通过检查是否触发了 handleEdit）
+            const originalHandleEdit = manager.handleEdit;
+            manager.handleEdit = function(...args) {
+                editClicked = true;
+                return originalHandleEdit.apply(this, args);
+            };
+            
+            // 模拟点击
+            copyBtn.click();
+            editBtn.click();
+            
+            // 恢复原始方法
+            manager.handleCopy = originalHandleCopy;
+            manager.handleEdit = originalHandleEdit;
+            
+            const result = document.getElementById('test3-result');
+            if (copyClicked && editClicked) {
+                result.className = 'test-result pass';
+                result.textContent = '✓ PASS: 复制和编辑按钮的事件处理器已正确绑定';
+            } else {
+                result.className = 'test-result fail';
+                result.textContent = `✗ FAIL: 事件绑定失败 (复制: ${copyClicked}, 编辑: ${editClicked})`;
+            }
+        }
+
+        // Test 4: 无效的 messageElement
+        function test4() {
+            const result = document.getElementById('test4-result');
+            
+            // 捕获控制台错误
+            const originalError = console.error;
+            let errorCaught = false;
+            console.error = function(...args) {
+                if (args[0].includes('messageElement 参数必须是有效的 HTMLElement')) {
+                    errorCaught = true;
+                }
+                originalError.apply(console, args);
+            };
+            
+            // 测试 null
+            manager.addActionsToMessage(null, '测试');
+            
+            // 测试非 HTMLElement
+            manager.addActionsToMessage('not an element', '测试');
+            
+            console.error = originalError;
+            
+            if (errorCaught) {
+                result.className = 'test-result pass';
+                result.textContent = '✓ PASS: 正确验证并拒绝无效的 messageElement';
+            } else {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: 未正确验证 messageElement 参数';
+            }
+        }
+
+        // Test 5: 无效的 messageText
+        function test5() {
+            const messageEl = document.getElementById('test5-message');
+            const result = document.getElementById('test5-result');
+            
+            // 捕获控制台错误
+            const originalError = console.error;
+            let errorCaught = false;
+            console.error = function(...args) {
+                if (args[0].includes('messageText 参数必须是字符串')) {
+                    errorCaught = true;
+                }
+                originalError.apply(console, args);
+            };
+            
+            // 测试非字符串
+            manager.addActionsToMessage(messageEl, 123);
+            manager.addActionsToMessage(messageEl, null);
+            manager.addActionsToMessage(messageEl, undefined);
+            
+            console.error = originalError;
+            
+            if (errorCaught) {
+                result.className = 'test-result pass';
+                result.textContent = '✓ PASS: 正确验证并拒绝无效的 messageText';
+            } else {
+                result.className = 'test-result fail';
+                result.textContent = '✗ FAIL: 未正确验证 messageText 参数';
+            }
+        }
+
+        // 运行所有测试
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                test1();
+                test2();
+                test3();
+                test4();
+                test5();
+            }, 100);
+        });
+    </script>
+</body>
+</html>

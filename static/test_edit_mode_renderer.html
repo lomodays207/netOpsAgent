@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EditModeRenderer 手动测试</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .test-button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .test-button:hover {
+            background: #5568d3;
+        }
+        .mock-message {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px;
+            border-radius: 12px;
+            margin: 20px 0;
+            color: white;
+        }
+        .message-content {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .message-text {
+            color: white;
+        }
+        .log-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            color: #f0f0f0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin-bottom: 3px;
+            padding: 2px 0;
+        }
+        .log-entry.info { color: #90caf9; }
+        .log-entry.success { color: #4caf50; }
+        .log-entry.error { color: #f44336; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 EditModeRenderer 手动测试</h1>
+        <div class="subtitle">Task 3.1 | Requirements: 3.2, 3.5, 3.6</div>
+        
+        <!-- 测试 1: 创建可编辑文本框 -->
+        <div class="test-section">
+            <h3>测试 1: createEditableTextarea()</h3>
+            <p>测试创建可编辑文本框，验证自动高度调整和光标定位</p>
+            <button class="test-button" onclick="test1()">运行测试 1</button>
+            <div id="test1-result"></div>
+        </div>
+        
+        <!-- 测试 2: 创建编辑按钮组 -->
+        <div class="test-section">
+            <h3>测试 2: createEditButtons()</h3>
+            <p>测试创建取消和发送按钮</p>
+            <button class="test-button" onclick="test2()">运行测试 2</button>
+            <div id="test2-result"></div>
+        </div>
+        
+        <!-- 测试 3: 渲染编辑模式 -->
+        <div class="test-section">
+            <h3>测试 3: renderEditMode()</h3>
+            <p>测试完整的编辑模式渲染流程</p>
+            <button class="test-button" onclick="test3()">运行测试 3</button>
+            <button class="test-button" onclick="test3Restore()">恢复原始消息</button>
+            <div id="test3-result">
+                <div class="mock-message" id="mock-message">
+                    <div class="message-content">
+                        <div class="message-text">这是一条测试消息。\n可以编辑这条消息。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 测试 4: 多行文本处理 -->
+        <div class="test-section">
+            <h3>测试 4: 多行文本处理</h3>
+            <p>测试包含多行文本的编辑模式</p>
+            <button class="test-button" onclick="test4()">运行测试 4</button>
+            <button class="test-button" onclick="test4Restore()">恢复原始消息</button>
+            <div id="test4-result">
+                <div class="mock-message" id="mock-message-multiline">
+                    <div class="message-content">
+                        <div class="message-text">第一行文本\n第二行文本\n第三行文本\n第四行文本\n第五行文本</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-container" id="log-container">
+            <div class="log-entry info">等待测试运行...</div>
+        </div>
+    </div>
+
+    <!-- 引入 marked.js 用于 Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // 日志函数
+        const logContainer = document.getElementById('log-container');
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        // 拦截 console 输出
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            if (args[0] && args[0].includes('[EditModeRenderer]')) {
+                log(args.join(' '), 'info');
+            }
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            if (args[0] && args[0].includes('[EditModeRenderer]')) {
+                log(args.join(' '), 'error');
+            }
+        };
+        
+        // 创建 EditModeRenderer 实例
+        const renderer = new EditModeRenderer();
+        
+        // 测试 1: createEditableTextarea()
+        function test1() {
+            log('开始测试 1: createEditableTextarea()', 'info');
+            const container = document.getElementById('test1-result');
+            container.innerHTML = '';
+            
+            try {
+                const text = '这是一条测试消息，用于验证文本框的创建和自动高度调整功能。';
+                const textarea = renderer.createEditableTextarea(text);
+                
+                // 验证
+                if (textarea instanceof HTMLTextAreaElement) {
+                    log('✓ 成功创建 textarea 元素', 'success');
+                } else {
+                    throw new Error('返回的不是 HTMLTextAreaElement');
+                }
+                
+                if (textarea.value === text) {
+                    log('✓ 文本内容正确设置', 'success');
+                } else {
+                    throw new Error('文本内容不匹配');
+                }
+                
+                if (textarea.className.includes('edit-message-textarea')) {
+                    log('✓ CSS 类名正确设置', 'success');
+                } else {
+                    throw new Error('CSS 类名不正确');
+                }
+                
+                if (textarea.getAttribute('aria-label') === '编辑消息内容') {
+                    log('✓ aria-label 正确设置', 'success');
+                } else {
+                    throw new Error('aria-label 不正确');
+                }
+                
+                container.appendChild(textarea);
+                log('测试 1 完成：所有检查通过 ✓', 'success');
+                
+            } catch (error) {
+                log(`测试 1 失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 测试 2: createEditButtons()
+        function test2() {
+            log('开始测试 2: createEditButtons()', 'info');
+            const container = document.getElementById('test2-result');
+            container.innerHTML = '';
+            
+            try {
+                const buttonsContainer = renderer.createEditButtons();
+                
+                // 验证容器
+                if (buttonsContainer instanceof HTMLElement) {
+                    log('✓ 成功创建按钮容器', 'success');
+                } else {
+                    throw new Error('返回的不是 HTMLElement');
+                }
+                
+                if (buttonsContainer.className.includes('edit-buttons')) {
+                    log('✓ 容器 CSS 类名正确', 'success');
+                } else {
+                    throw new Error('容器 CSS 类名不正确');
+                }
+                
+                // 验证取消按钮
+                const cancelButton = buttonsContainer.querySelector('.edit-cancel-btn');
+                if (cancelButton && cancelButton.textContent === '取消') {
+                    log('✓ 取消按钮创建成功', 'success');
+                } else {
+                    throw new Error('取消按钮不正确');
+                }
+                
+                if (cancelButton.getAttribute('aria-label') === '取消编辑') {
+                    log('✓ 取消按钮 aria-label 正确', 'success');
+                } else {
+                    throw new Error('取消按钮 aria-label 不正确');
+                }
+                
+                // 验证发送按钮
+                const sendButton = buttonsContainer.querySelector('.edit-send-btn');
+                if (sendButton && sendButton.textContent === '发送') {
+                    log('✓ 发送按钮创建成功', 'success');
+                } else {
+                    throw new Error('发送按钮不正确');
+                }
+                
+                if (sendButton.getAttribute('aria-label') === '发送编辑后的消息') {
+                    log('✓ 发送按钮 aria-label 正确', 'success');
+                } else {
+                    throw new Error('发送按钮 aria-label 不正确');
+                }
+                
+                container.appendChild(buttonsContainer);
+                log('测试 2 完成：所有检查通过 ✓', 'success');
+                
+            } catch (error) {
+                log(`测试 2 失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 测试 3: renderEditMode()
+        let test3Elements = null;
+        function test3() {
+            log('开始测试 3: renderEditMode()', 'info');
+            
+            try {
+                const messageElement = document.getElementById('mock-message');
+                const originalText = '这是一条测试消息。\n可以编辑这条消息。';
+                
+                test3Elements = renderer.renderEditMode(messageElement, originalText);
+                
+                // 验证返回值
+                if (test3Elements && test3Elements.textarea && test3Elements.cancelButton && test3Elements.sendButton) {
+                    log('✓ renderEditMode 返回了正确的元素', 'success');
+                } else {
+                    throw new Error('返回的元素不完整');
+                }
+                
+                // 验证编辑状态标记
+                if (messageElement.getAttribute('data-editing') === 'true') {
+                    log('✓ data-editing 标记已设置', 'success');
+                } else {
+                    throw new Error('data-editing 标记未设置');
+                }
+                
+                // 验证文本框内容
+                if (test3Elements.textarea.value === originalText) {
+                    log('✓ 文本框内容正确', 'success');
+                } else {
+                    throw new Error('文本框内容不正确');
+                }
+                
+                log('测试 3 完成：编辑模式已渲染 ✓', 'success');
+                log('提示：现在可以在文本框中编辑内容，然后点击"恢复原始消息"按钮', 'info');
+                
+            } catch (error) {
+                log(`测试 3 失败: ${error.message}`, 'error');
+            }
+        }
+        
+        function test3Restore() {
+            log('开始恢复原始消息', 'info');
+            
+            try {
+                const messageElement = document.getElementById('mock-message');
+                const originalText = '这是一条测试消息。\n可以编辑这条消息。';
+                
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                
+                // 验证编辑状态标记已移除
+                if (!messageElement.hasAttribute('data-editing')) {
+                    log('✓ data-editing 标记已移除', 'success');
+                } else {
+                    throw new Error('data-editing 标记未移除');
+                }
+                
+                log('原始消息已恢复 ✓', 'success');
+                
+            } catch (error) {
+                log(`恢复失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 测试 4: 多行文本处理
+        let test4Elements = null;
+        function test4() {
+            log('开始测试 4: 多行文本处理', 'info');
+            
+            try {
+                const messageElement = document.getElementById('mock-message-multiline');
+                const originalText = '第一行文本\n第二行文本\n第三行文本\n第四行文本\n第五行文本';
+                
+                test4Elements = renderer.renderEditMode(messageElement, originalText);
+                
+                // 验证文本框行数
+                const lineCount = originalText.split('\n').length;
+                log(`✓ 文本包含 ${lineCount} 行`, 'info');
+                
+                if (test4Elements.textarea.rows >= 3) {
+                    log(`✓ 文本框行数已设置: ${test4Elements.textarea.rows}`, 'success');
+                } else {
+                    throw new Error('文本框行数设置不正确');
+                }
+                
+                log('测试 4 完成：多行文本处理正常 ✓', 'success');
+                
+            } catch (error) {
+                log(`测试 4 失败: ${error.message}`, 'error');
+            }
+        }
+        
+        function test4Restore() {
+            log('开始恢复多行消息', 'info');
+            
+            try {
+                const messageElement = document.getElementById('mock-message-multiline');
+                const originalText = '第一行文本\n第二行文本\n第三行文本\n第四行文本\n第五行文本';
+                
+                renderer.restoreOriginalMessage(messageElement, originalText);
+                log('多行消息已恢复 ✓', 'success');
+                
+            } catch (error) {
+                log(`恢复失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            log('EditModeRenderer 测试页面已加载', 'success');
+            log('点击各个测试按钮开始测试', 'info');
+        });
+    </script>
+</body>
+</html>

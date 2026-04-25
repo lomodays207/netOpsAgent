@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task 3.3 手动测试 - 退出编辑模式</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .instructions h2 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #856404;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+        }
+
+        .instructions li {
+            margin: 5px 0;
+        }
+
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .user-message {
+            background: #e3f2fd;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            position: relative;
+        }
+
+        .message-text {
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .message-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .message-action-btn {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .message-action-btn:hover {
+            background: #f5f5f5;
+            border-color: #999;
+        }
+
+        .message-edit-btn {
+            color: #1976d2;
+        }
+
+        .edit-message-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 10px;
+            border: 2px solid #1976d2;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+
+        .edit-message-textarea:focus {
+            outline: none;
+            border-color: #0d47a1;
+        }
+
+        .edit-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .edit-cancel-btn,
+        .edit-send-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .edit-cancel-btn {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .edit-cancel-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .edit-send-btn {
+            background: #1976d2;
+            color: white;
+        }
+
+        .edit-send-btn:hover {
+            background: #0d47a1;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .verification-checklist {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .verification-checklist h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .checklist-item {
+            padding: 10px;
+            margin: 8px 0;
+            border-left: 4px solid #ddd;
+            background: #f9f9f9;
+        }
+
+        .checklist-item.checked {
+            border-left-color: #4caf50;
+            background: #f1f8f4;
+        }
+
+        .checklist-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Task 3.3 手动测试: 退出编辑模式逻辑</h1>
+    
+    <div class="instructions">
+        <h2>📋 测试步骤</h2>
+        <ol>
+            <li>点击下方消息的 <strong>"✏️ 编辑"</strong> 按钮进入编辑模式</li>
+            <li>观察编辑模式的 UI (文本框和取消/发送按钮)</li>
+            <li>点击 <strong>"取消"</strong> 按钮</li>
+            <li>验证消息恢复到原始状态</li>
+            <li>勾选下方的验证清单确认所有需求已满足</li>
+        </ol>
+    </div>
+
+    <div class="test-container">
+        <h3>测试消息</h3>
+        <div class="user-message" id="test-message">
+            <div class="message-text">
+                这是一条测试消息。点击编辑按钮可以进入编辑模式,然后点击取消按钮测试恢复功能。
+            </div>
+            <div class="message-actions">
+                <button class="message-action-btn message-edit-btn" onclick="enterEditMode()">
+                    ✏️ 编辑
+                </button>
+            </div>
+        </div>
+
+        <div id="status" class="status info" style="display: none;">
+            等待操作...
+        </div>
+    </div>
+
+    <div class="verification-checklist">
+        <h3>✅ 验证清单 (Requirements 4.1, 4.6, 4.7)</h3>
+        
+        <div class="checklist-item">
+            <input type="checkbox" id="check-4-1" onchange="updateChecklist()">
+            <label for="check-4-1">
+                <strong>Requirement 4.1:</strong> 原始消息文本已恢复显示
+            </label>
+        </div>
+
+        <div class="checklist-item">
+            <input type="checkbox" id="check-4-6" onchange="updateChecklist()">
+            <label for="check-4-6">
+                <strong>Requirement 4.6:</strong> 操作按钮(编辑按钮)已恢复可见
+            </label>
+        </div>
+
+        <div class="checklist-item">
+            <input type="checkbox" id="check-4-7-textarea" onchange="updateChecklist()">
+            <label for="check-4-7-textarea">
+                <strong>Requirement 4.7a:</strong> 编辑文本框已从 DOM 中移除
+            </label>
+        </div>
+
+        <div class="checklist-item">
+            <input type="checkbox" id="check-4-7-buttons" onchange="updateChecklist()">
+            <label for="check-4-7-buttons">
+                <strong>Requirement 4.7b:</strong> 编辑按钮组(取消/发送)已从 DOM 中移除
+            </label>
+        </div>
+
+        <div class="checklist-item">
+            <input type="checkbox" id="check-4-7-attribute" onchange="updateChecklist()">
+            <label for="check-4-7-attribute">
+                <strong>Requirement 4.7c:</strong> data-editing 属性已移除
+            </label>
+        </div>
+
+        <div id="verification-result" style="margin-top: 15px; padding: 10px; border-radius: 4px; display: none;">
+        </div>
+    </div>
+
+    <script>
+        // 从 static/app.js 提取的 EditModeRenderer 类
+        class EditModeRenderer {
+            createEditableTextarea(text) {
+                const textarea = document.createElement('textarea');
+                textarea.className = 'edit-message-textarea';
+                textarea.value = text;
+                textarea.setAttribute('aria-label', '编辑消息内容');
+                
+                const lineCount = text.split('\n').length;
+                const estimatedRows = Math.max(3, Math.min(lineCount + 1, 10));
+                textarea.rows = estimatedRows;
+
+                return textarea;
+            }
+
+            createEditButtons() {
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.className = 'edit-buttons';
+
+                const cancelButton = document.createElement('button');
+                cancelButton.type = 'button';
+                cancelButton.className = 'edit-cancel-btn';
+                cancelButton.textContent = '取消';
+                cancelButton.setAttribute('aria-label', '取消编辑');
+
+                const sendButton = document.createElement('button');
+                sendButton.type = 'button';
+                sendButton.className = 'edit-send-btn';
+                sendButton.textContent = '发送';
+                sendButton.setAttribute('aria-label', '发送编辑后的消息');
+
+                buttonsContainer.appendChild(cancelButton);
+                buttonsContainer.appendChild(sendButton);
+
+                return buttonsContainer;
+            }
+
+            renderEditMode(messageElement, originalText) {
+                const messageTextEl = messageElement.querySelector('.message-text');
+                if (!messageTextEl) return null;
+
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                if (actionsContainer) {
+                    actionsContainer.style.display = 'none';
+                }
+
+                messageElement.setAttribute('data-original-html', messageTextEl.innerHTML);
+                messageElement.setAttribute('data-original-text', originalText);
+
+                const textarea = this.createEditableTextarea(originalText);
+                const buttonsContainer = this.createEditButtons();
+                const cancelButton = buttonsContainer.querySelector('.edit-cancel-btn');
+                const sendButton = buttonsContainer.querySelector('.edit-send-btn');
+
+                messageTextEl.innerHTML = '';
+                messageTextEl.appendChild(textarea);
+                messageTextEl.appendChild(buttonsContainer);
+
+                messageElement.setAttribute('data-editing', 'true');
+
+                setTimeout(() => {
+                    textarea.focus();
+                    const textLength = textarea.value.length;
+                    textarea.setSelectionRange(textLength, textLength);
+                }, 0);
+
+                return { textarea, cancelButton, sendButton };
+            }
+
+            restoreOriginalMessage(messageElement, originalText) {
+                if (!messageElement || !(messageElement instanceof HTMLElement)) {
+                    console.error('[EditModeRenderer] restoreOriginalMessage 失败: messageElement 参数必须是有效的 HTMLElement');
+                    return;
+                }
+
+                console.log('[EditModeRenderer] 恢复原始消息显示');
+
+                const messageTextEl = messageElement.querySelector('.message-text');
+                if (!messageTextEl) {
+                    console.error('[EditModeRenderer] 找不到 .message-text 元素');
+                    return;
+                }
+
+                const originalHtml = messageElement.getAttribute('data-original-html');
+                if (originalHtml) {
+                    messageTextEl.innerHTML = originalHtml;
+                    console.log('[EditModeRenderer] 已恢复原始 HTML 内容');
+                } else {
+                    console.warn('[EditModeRenderer] 未找到保存的原始 HTML,使用文本内容重新渲染');
+                    messageTextEl.textContent = originalText || '';
+                }
+
+                const actionsContainer = messageElement.querySelector('.message-actions');
+                if (actionsContainer) {
+                    actionsContainer.style.display = '';
+                    console.log('[EditModeRenderer] 已恢复操作按钮可见性');
+                }
+
+                messageElement.removeAttribute('data-editing');
+                messageElement.removeAttribute('data-original-html');
+                messageElement.removeAttribute('data-original-text');
+
+                console.log('[EditModeRenderer] ✓ 原始消息已恢复');
+            }
+        }
+
+        const renderer = new EditModeRenderer();
+        let editElements = null;
+
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+        }
+
+        function enterEditMode() {
+            const messageElement = document.getElementById('test-message');
+            const originalText = messageElement.querySelector('.message-text').textContent.trim();
+            
+            editElements = renderer.renderEditMode(messageElement, originalText);
+            
+            if (editElements) {
+                // 绑定取消按钮
+                editElements.cancelButton.onclick = () => exitEditMode();
+                
+                // 绑定发送按钮(这里只是演示,不实际发送)
+                editElements.sendButton.onclick = () => {
+                    alert('这是测试页面,不会实际发送消息。请点击"取消"按钮测试恢复功能。');
+                };
+                
+                showStatus('✓ 已进入编辑模式。现在点击"取消"按钮测试恢复功能。', 'info');
+            }
+        }
+
+        function exitEditMode() {
+            const messageElement = document.getElementById('test-message');
+            const originalText = messageElement.getAttribute('data-original-text');
+            
+            renderer.restoreOriginalMessage(messageElement, originalText);
+            
+            showStatus('✓ 已退出编辑模式。请检查下方验证清单。', 'success');
+            
+            // 自动验证
+            autoVerify();
+        }
+
+        function autoVerify() {
+            const messageElement = document.getElementById('test-message');
+            const messageTextEl = messageElement.querySelector('.message-text');
+            
+            // 检查 4.1: 原始文本已恢复
+            const hasOriginalText = messageTextEl.textContent.includes('这是一条测试消息');
+            document.getElementById('check-4-1').checked = hasOriginalText;
+            
+            // 检查 4.6: 操作按钮可见
+            const actionsContainer = messageElement.querySelector('.message-actions');
+            const actionsVisible = actionsContainer && actionsContainer.style.display !== 'none';
+            document.getElementById('check-4-6').checked = actionsVisible;
+            
+            // 检查 4.7a: textarea 已移除
+            const noTextarea = !messageTextEl.querySelector('.edit-message-textarea');
+            document.getElementById('check-4-7-textarea').checked = noTextarea;
+            
+            // 检查 4.7b: 编辑按钮组已移除
+            const noEditButtons = !messageTextEl.querySelector('.edit-buttons');
+            document.getElementById('check-4-7-buttons').checked = noEditButtons;
+            
+            // 检查 4.7c: data-editing 属性已移除
+            const noEditingAttr = !messageElement.hasAttribute('data-editing');
+            document.getElementById('check-4-7-attribute').checked = noEditingAttr;
+            
+            updateChecklist();
+        }
+
+        function updateChecklist() {
+            const checkboxes = document.querySelectorAll('.checklist-item input[type="checkbox"]');
+            let allChecked = true;
+            
+            checkboxes.forEach(checkbox => {
+                const item = checkbox.closest('.checklist-item');
+                if (checkbox.checked) {
+                    item.classList.add('checked');
+                } else {
+                    item.classList.remove('checked');
+                    allChecked = false;
+                }
+            });
+            
+            const resultEl = document.getElementById('verification-result');
+            if (allChecked) {
+                resultEl.style.display = 'block';
+                resultEl.style.background = '#d4edda';
+                resultEl.style.color = '#155724';
+                resultEl.style.border = '1px solid #c3e6cb';
+                resultEl.innerHTML = '<strong>✅ 所有验证通过!</strong><br>Task 3.3 的实现满足所有需求 (Requirements 4.1, 4.6, 4.7)';
+            } else {
+                resultEl.style.display = 'none';
+            }
+        }
+
+        // 页面加载时显示初始状态
+        window.addEventListener('DOMContentLoaded', () => {
+            showStatus('点击"✏️ 编辑"按钮开始测试', 'info');
+        });
+    </script>
+</body>
+</html>

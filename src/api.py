@@ -29,6 +29,7 @@ from .agent.general_chat_agent import (
     GENERAL_CHAT_SYSTEM_PROMPT_TEMPLATE,
     GeneralChatToolAgent,
 )
+from .agent.query_intents import detect_host_port_status_query
 from .agent.llm_agent import LLMAgent, NeedUserInputException
 from .integrations import LLMClient
 from .session_manager import get_session_manager, DiagnosisSession
@@ -2096,11 +2097,14 @@ async def general_chat_stream_v2(request: GeneralChatRequestWithRAG):
             system_prompt = build_general_chat_system_prompt(use_rag=request.use_rag)
             retrieved_docs = []
 
-            # Task 3.2: Detect if we should skip RAG for access relation data queries
+            # Task 3.2: Detect if we should skip RAG for structured tool-backed queries
             skip_rag = False
             if request.use_rag and is_access_relation_data_query(request.message):
                 skip_rag = True
                 yield f"data: {json.dumps({'type': 'rag_skipped', 'reason': '检测到访问关系数据查询,跳过知识库检索'}, ensure_ascii=False)}\n\n"
+            elif request.use_rag and detect_host_port_status_query(request.message):
+                skip_rag = True
+                yield f"data: {json.dumps({'type': 'rag_skipped', 'reason': '检测到主机端口状态查询,跳过知识库检索'}, ensure_ascii=False)}\n\n"
 
             # Task 3.3: Only execute RAG if not skipped
             if request.use_rag and not skip_rag:
