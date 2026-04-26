@@ -34,6 +34,7 @@ from .agent.llm_agent import LLMAgent, NeedUserInputException
 from .integrations import LLMClient
 from .session_manager import get_session_manager, DiagnosisSession
 from .tracing.metrics import get_trace_runtime_metrics, record_trace_query
+from .tracing.recorder import TraceRecorder
 
 # 加载环境变量
 load_dotenv()
@@ -52,6 +53,36 @@ if os.path.exists("static"):
 # 初始化会话管理器
 session_manager = get_session_manager()
 intent_router = build_intent_router()
+
+
+def _create_trace_recorder() -> Optional[TraceRecorder]:
+    database = getattr(session_manager, "db", None)
+    if database is None:
+        return None
+    return TraceRecorder(database=database)
+
+
+def _create_llm_agent(llm_client: LLMClient, *, verbose: bool = False) -> LLMAgent:
+    return LLMAgent(
+        llm_client=llm_client,
+        verbose=verbose,
+        trace_recorder=_create_trace_recorder(),
+    )
+
+
+def _create_general_chat_tool_agent(
+    llm_client: LLMClient,
+    *,
+    session_id: str,
+    event_callback: Optional[Any] = None,
+) -> GeneralChatToolAgent:
+    return GeneralChatToolAgent(
+        llm_client=llm_client,
+        session_manager=session_manager,
+        session_id=session_id,
+        event_callback=event_callback,
+        trace_recorder=_create_trace_recorder(),
+    )
 
 
 @app.on_event("startup")
@@ -453,7 +484,7 @@ async def diagnose(request: DiagnoseRequest):
             )
 
         # 3. 执行诊断
-        agent = LLMAgent(llm_client=llm_client, verbose=request.verbose)
+        agent = _create_llm_agent(llm_client, verbose=request.verbose)
         report = await agent.diagnose(task, session_id=task_id, session_manager=session_manager)
 
         # 保存助手最终结论
@@ -588,7 +619,7 @@ async def diagnose_stream(request: DiagnoseRequest):
                         )
 
                     # 3. 执行诊断（带事件回调）
-                    agent = LLMAgent(llm_client=llm_client, verbose=request.verbose)
+                    agent = _create_llm_agent(llm_client, verbose=request.verbose)
 
                     # 创建或获取会话
                     if request.session_id:
@@ -803,6 +834,16 @@ async def chat_answer(request: ChatAnswerRequest):
                 try:
                     # 恢复 Agent
                     agent = session.agent
+                    if agent is None:
+                        llm_client = session.llm_client or LLMClient()
+                        agent = _create_llm_agent(llm_client, verbose=False)
+                        session_manager.update_session(
+                            request.session_id,
+                            llm_client=llm_client,
+                            agent=agent,
+                        )
+                    elif getattr(agent, "trace_recorder", None) is None:
+                        agent.trace_recorder = _create_trace_recorder()
                     task = session.task
 
                     # 更新会话状态
@@ -1023,7 +1064,7 @@ async def general_chat(request: GeneralChatRequest):
             )
 
             # 创建会话
-            agent = LLMAgent(llm_client=llm_client, verbose=False)
+            agent = _create_llm_agent(llm_client, verbose=False)
             session = session_manager.create_session(
                 session_id=session_id,
                 task=task,
@@ -1076,13 +1117,12 @@ async def general_chat_v2(request: GeneralChatRequest):
                 session_id=session_id,
                 task=create_general_chat_task(session_id, request.message),
                 llm_client=llm_client,
-                agent=LLMAgent(llm_client=llm_client, verbose=False)
+                agent=_create_llm_agent(llm_client, verbose=False)
             )
 
         await session_manager.add_message(session_id, "user", request.message)
-        tool_agent = GeneralChatToolAgent(
-            llm_client=llm_client,
-            session_manager=session_manager,
+        tool_agent = _create_general_chat_tool_agent(
+            llm_client,
             session_id=session_id,
         )
         response = await tool_agent.run(
@@ -2026,7 +2066,7 @@ async def general_chat_stream(request: GeneralChatRequestWithRAG):
                     fault_type=FaultType.CONNECTIVITY,
                     port=None
                 )
-                agent = LLMAgent(llm_client=llm_client, verbose=False)
+                agent = _create_llm_agent(llm_client, verbose=False)
                 session_manager.create_session(
                     session_id=session_id,
                     task=task,
@@ -2089,7 +2129,7 @@ async def general_chat_stream_v2(request: GeneralChatRequestWithRAG):
                     session_id=session_id,
                     task=create_general_chat_task(session_id, request.message),
                     llm_client=llm_client,
-                    agent=LLMAgent(llm_client=llm_client, verbose=False)
+                    agent=_create_llm_agent(llm_client, verbose=False)
                 )
 
             yield f"data: {json.dumps({'type': 'start', 'session_id': session_id}, ensure_ascii=False)}\n\n"
@@ -2163,9 +2203,8 @@ async def general_chat_stream_v2(request: GeneralChatRequestWithRAG):
                 await event_queue.put(event)
                 await asyncio.sleep(0)
 
-            tool_agent = GeneralChatToolAgent(
-                llm_client=llm_client,
-                session_manager=session_manager,
+            tool_agent = _create_general_chat_tool_agent(
+                llm_client,
                 session_id=session_id,
                 event_callback=callback,
             )

@@ -77,7 +77,7 @@ function renderReasoningSteps(steps) {
         <article class="trace-timeline-item">
             <div class="trace-timeline-step">#${escapeHtml(String(step.step_number ?? '-'))}</div>
             <div class="trace-timeline-content">
-                <div class="trace-timeline-meta">${formatDateTime(step.created_at)}</div>
+                <div class="trace-timeline-meta">${formatDateTime(step.timestamp || step.created_at)}</div>
                 <pre>${escapeHtml(step.reasoning_content || '')}</pre>
             </div>
         </article>

@@ -4,13 +4,15 @@ from types import SimpleNamespace
 
 import src.api as api
 from src.agent.intent_router import IntentDecision
+from src.tracing.recorder import TraceRecorder
 
 
 class FakeSessionManager:
-    def __init__(self, existing_session=None):
+    def __init__(self, existing_session=None, db=None):
         self.existing_session = existing_session
         self.created_session = None
         self.messages = []
+        self.db = db
 
     async def get_session(self, session_id):
         if self.existing_session and self.existing_session.session_id == session_id:
@@ -58,11 +60,22 @@ class FakeLLMClient:
 
 
 class FakeGeneralChatToolAgent:
-    def __init__(self, llm_client, session_manager, session_id, event_callback=None):
+    last_trace_recorder = None
+
+    def __init__(
+        self,
+        llm_client,
+        session_manager,
+        session_id,
+        event_callback=None,
+        trace_recorder=None,
+    ):
         self.llm_client = llm_client
         self.session_manager = session_manager
         self.session_id = session_id
         self.event_callback = event_callback
+        self.trace_recorder = trace_recorder
+        FakeGeneralChatToolAgent.last_trace_recorder = trace_recorder
 
     async def run(self, session_messages, system_prompt):
         return "general reply"
@@ -145,6 +158,41 @@ def test_general_chat_stream_creates_llm_for_lightweight_session(monkeypatch):
 
     assert isinstance(session.llm_client, FakeLLMClient)
     assert _extract_content_text(payload) == "general reply"
+
+
+def test_general_chat_stream_injects_trace_recorder_when_tracing_enabled(monkeypatch):
+    fake_manager = FakeSessionManager(db=object())
+
+    class TraceCapturingGeneralChatToolAgent(FakeGeneralChatToolAgent):
+        def __init__(
+            self,
+            llm_client,
+            session_manager,
+            session_id,
+            event_callback=None,
+            trace_recorder=None,
+        ):
+            super().__init__(llm_client, session_manager, session_id, event_callback=event_callback)
+            self.trace_recorder = trace_recorder
+            TraceCapturingGeneralChatToolAgent.last_trace_recorder = trace_recorder
+
+    monkeypatch.setattr(api, "session_manager", fake_manager)
+    monkeypatch.setattr(api, "LLMClient", FakeLLMClient)
+    monkeypatch.setattr(api, "GeneralChatToolAgent", TraceCapturingGeneralChatToolAgent)
+    monkeypatch.setenv("ENABLE_TRACING", "true")
+
+    async def run_test():
+        response = await api.general_chat_stream_v2(
+            api.GeneralChatRequestWithRAG(
+                message="帮我查一下访问关系",
+                use_rag=False,
+            )
+        )
+        return await _read_streaming_response(response)
+
+    asyncio.run(run_test())
+
+    assert isinstance(TraceCapturingGeneralChatToolAgent.last_trace_recorder, TraceRecorder)
 
 
 def test_general_chat_non_stream_creates_llm_for_lightweight_session(monkeypatch):
